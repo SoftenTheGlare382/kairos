@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package account;
+
+option go_package = "kairos/api/accountpb";
+
+// Account 服务（供 Video 等下游服务 RPC 调用）
+service AccountService {
+  // FindByID 按 ID 获取用户
+  rpc FindByID(FindByIDRequest) returns (FindByIDResponse);
+}
+
+message FindByIDRequest {
+  uint32 id = 1;
+}
+
+message FindByIDResponse {
+  uint32 id = 1;
+  string username = 2;
+}

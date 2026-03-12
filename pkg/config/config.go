@@ -18,6 +18,43 @@ type Config struct {
 	Jwt      JwtConfig      `yaml:"jwt"`
 	Database DatabaseConfig `yaml:"database"`
 	Redis    RedisConfig    `yaml:"redis"`
+	Account  AccountConfig  `yaml:"account"`
+	Video    VideoConfig    `yaml:"video"`
+	Qiniu    QiniuConfig    `yaml:"qiniu"`
+}
+
+// VideoConfig Video 服务配置（含 RPC 调用 Account 的地址、存储类型等）
+type VideoConfig struct {
+	AccountGrpcAddr string        `yaml:"account_grpc_addr"` // Account gRPC 地址（Video 调用）
+	Storage         StorageConfig `yaml:"storage"`           // 存储配置（本地 / 七牛云）
+}
+
+// StorageConfig 存储配置，用于动态切换 local / qiniu
+type StorageConfig struct {
+	Type  string              `yaml:"type"`  // local | qiniu
+	Local LocalStorageConfig  `yaml:"local"` // 本地存储配置（type=local 时生效）
+	Qiniu QiniuConfig         `yaml:"qiniu"` // 七牛云配置（type=qiniu 时生效）
+}
+
+// LocalStorageConfig 本地存储配置
+type LocalStorageConfig struct {
+	UploadDir    string `yaml:"upload_dir"`    // 上传目录，如 .run/uploads
+	StaticPrefix string `yaml:"static_prefix"` // 静态 URL 前缀，如 /static
+}
+
+// QiniuConfig 七牛云 OSS 配置（Video 服务可选）
+type QiniuConfig struct {
+	AccessKey string `yaml:"access_key"`
+	SecretKey string `yaml:"secret_key"`
+	Bucket    string `yaml:"bucket"`
+	Domain    string `yaml:"domain"`
+	Zone      string `yaml:"zone"` // z0华东 z1华北 z2华南 na0北美
+}
+
+// AccountConfig Account 服务地址（Video 等下游服务调用）
+type AccountConfig struct {
+	BaseURL  string `yaml:"base_url"`   // HTTP 地址（保留兼容）
+	GrpcAddr string `yaml:"grpc_addr"`  // gRPC 地址（服务间 RPC）
 }
 
 // JwtConfig JWT 配置
@@ -27,8 +64,10 @@ type JwtConfig struct {
 }
 // ServerConfig HTTP 服务配置
 type ServerConfig struct {
-	Port    int    `yaml:"port"`
-	GinMode string `yaml:"gin_mode"` // debug | release | test
+	AccountPort    int    `yaml:"account_port"`     // Account HTTP 端口
+	AccountGrpcPort int   `yaml:"account_grpc_port"` // Account gRPC 端口
+	VideoPort      int    `yaml:"video_port"`       // Video 服务端口
+	GinMode        string `yaml:"gin_mode"`         // debug | release | test
 }
 
 // DatabaseConfig MySQL 数据库配置
@@ -160,8 +199,10 @@ func Load() Config {
 func LoadFromEnv() Config {
 	return Config{
 		Server: ServerConfig{
-			Port:    getEnvInt("SERVER_PORT", 8081),
-			GinMode: getEnv("GIN_MODE", "debug"),
+			AccountPort:     getEnvInt("ACCOUNT_SERVER_PORT", 8081),
+			AccountGrpcPort: getEnvInt("ACCOUNT_GRPC_PORT", 9081),
+			VideoPort:       getEnvInt("VIDEO_SERVER_PORT", 8082),
+			GinMode:         getEnv("GIN_MODE", "debug"),
 		},
 		Jwt: JwtConfig{
 			SecretKey: getEnv("JWT_SECRET", "change-me-in-env"),
@@ -172,13 +213,41 @@ func LoadFromEnv() Config {
 			Port:     getEnvInt("DB_PORT", 3306),
 			User:     getEnv("DB_USER", "root"),
 			Password: getEnv("DB_PASSWORD", ""),
-			DBName:   getEnv("DB_NAME", "account_db"),
+			DBName:   getEnv("DB_NAME", "kairos_db"),
 		},
 		Redis: RedisConfig{
 			Host:     getEnv("REDIS_HOST", "127.0.0.1"),
 			Port:     getEnvInt("REDIS_PORT", 6379),
 			Password: getEnv("REDIS_PASSWORD", ""),
 			DB:       getEnvInt("REDIS_DB", 0),
+		},
+		Account: AccountConfig{
+			BaseURL:  getEnv("ACCOUNT_SERVICE_URL", "http://127.0.0.1:8081"),
+			GrpcAddr: getEnv("ACCOUNT_GRPC_ADDR", "127.0.0.1:9081"),
+		},
+		Video: VideoConfig{
+			AccountGrpcAddr: getEnv("VIDEO_ACCOUNT_GRPC_ADDR", getEnv("ACCOUNT_GRPC_ADDR", "127.0.0.1:9081")),
+			Storage: StorageConfig{
+				Type: getEnv("VIDEO_STORAGE_TYPE", "local"),
+				Local: LocalStorageConfig{
+					UploadDir:    getEnv("VIDEO_LOCAL_UPLOAD_DIR", ".run/uploads"),
+					StaticPrefix: getEnv("VIDEO_LOCAL_STATIC_PREFIX", "/static"),
+				},
+				Qiniu: QiniuConfig{
+					AccessKey: getEnv("QINIU_ACCESS_KEY", ""),
+					SecretKey: getEnv("QINIU_SECRET_KEY", ""),
+					Bucket:    getEnv("QINIU_BUCKET", ""),
+					Domain:    getEnv("QINIU_DOMAIN", ""),
+					Zone:      getEnv("QINIU_ZONE", "z0"),
+				},
+			},
+		},
+		Qiniu: QiniuConfig{
+			AccessKey: getEnv("QINIU_ACCESS_KEY", ""),
+			SecretKey: getEnv("QINIU_SECRET_KEY", ""),
+			Bucket:    getEnv("QINIU_BUCKET", ""),
+			Domain:    getEnv("QINIU_DOMAIN", ""),
+			Zone:      getEnv("QINIU_ZONE", "z0"),
 		},
 	}
 }

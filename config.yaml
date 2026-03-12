@@ -2,9 +2,6 @@
 # 支持 ${VAR} 引用 config.env / 环境变量
 # 加载顺序：config.env -> 环境变量 -> YAML 默认值
 
-server:
-  port: ${SERVER_PORT:-8081}
-  gin_mode: ${GIN_MODE:-debug}  # debug | release | test
 
 database:
   host: ${DB_HOST:-127.0.0.1}
@@ -21,4 +18,30 @@ redis:
 
 jwt:
   secret_key: ${JWT_SECRET:-change-me-in-env}
-  token_timeout: 24 * 60 #minutes  # 24h | 1h | 10m
+  token_timeout: 1440  # 单位：分钟，1440=24h
+
+
+server:
+  account_port: ${ACCOUNT_SERVER_PORT:-8081}       # Account HTTP 端口
+  account_grpc_port: ${ACCOUNT_GRPC_PORT:-9081}    # Account gRPC 端口（服务间 RPC）
+  video_port: ${VIDEO_SERVER_PORT:-8082}           # Video 服务端口
+  gin_mode: ${GIN_MODE:-debug}             # debug | release | test
+# Video 等下游服务调用 Account 的地址
+account:
+  base_url: ${ACCOUNT_SERVICE_URL:-http://127.0.0.1:8081}
+  grpc_addr: ${ACCOUNT_GRPC_ADDR:-127.0.0.1:9081}  # gRPC 地址（服务间调用）
+
+# Video 服务配置
+video:
+  account_grpc_addr: ${ACCOUNT_GRPC_ADDR:-127.0.0.1:9081}  # Video 调用 Account gRPC 的地址
+  storage:
+    type: ${VIDEO_STORAGE_TYPE:-local}   # local | qiniu，动态切换存储方式
+    local:
+      upload_dir: ${VIDEO_LOCAL_UPLOAD_DIR:-.run/uploads}
+      static_prefix: ${VIDEO_LOCAL_STATIC_PREFIX:-/static}
+    qiniu:
+      access_key: ${QINIU_ACCESS_KEY:-}
+      secret_key: ${QINIU_SECRET_KEY:-}
+      bucket: ${QINIU_BUCKET:-}
+      domain: ${QINIU_DOMAIN:-}
+      zone: ${QINIU_ZONE:-z0}

@@ -22,7 +22,14 @@ func main() {
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| Server.Port | int | HTTP 服务端口 |
+| Server.AccountPort | int | Account HTTP 端口 |
+| Server.AccountGrpcPort | int | Account gRPC 端口（服务间 RPC） |
+| Server.VideoPort | int | Video 服务端口 |
+| Account.GrpcAddr | string | Account gRPC 地址（Video 连接用） |
+| Video.AccountGrpcAddr | string | Video 调用 Account gRPC 的地址 |
+| Video.Storage.Type | string | 存储类型：local、qiniu |
+| Video.Storage.Local.UploadDir | string | 本地存储目录 |
+| Video.Storage.Local.StaticPrefix | string | 本地静态 URL 前缀 |
 | Server.GinMode | string | Gin 模式：debug、release、test |
 | Jwt.SecretKey | string | JWT 签名密钥 |
 | Database.Host | string | MySQL 主机 |

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 
 	"kairos/pkg/config"
@@ -11,8 +12,12 @@ import (
 	account "kairos/services/account/internal"
 
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	accountpb "kairos/api/accountpb"
+	"kairos/pkg/middleware"
 )
 
 func main() {
@@ -60,14 +65,14 @@ func main() {
 
 	// 需鉴权接口
 	protected := accountGroup.Group("")
-	protected.Use(account.JWTAuth(cache, cfg.Jwt))
+	protected.Use(middleware.JWTAuth(cache, cfg.Jwt))
 	{
 		protected.POST("/logout", handler.Logout)
 		protected.POST("/rename", handler.Rename)
 		protected.POST("/cancel", handler.Cancel)
-		accountGroup.POST("/changePassword", handler.ChangePassword)
-		accountGroup.POST("/findByID", handler.FindByID)
-		accountGroup.POST("/findByUsername", handler.FindByUsername)
+		protected.POST("/changePassword", handler.ChangePassword)
+		protected.POST("/findByID", handler.FindByID)
+		protected.POST("/findByUsername", handler.FindByUsername)
 	}
 
 	// 内部接口（供 Gateway 校验 Token）
@@ -76,8 +81,28 @@ func main() {
 		internalGroup.POST("/validate", handler.Validate)
 	}
 
-	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	log.Printf("Account service listening on %s", addr)
+	// 启动 gRPC 服务（供 Video 等下游服务 RPC 调用）
+	grpcPort := cfg.Server.AccountGrpcPort
+	if grpcPort == 0 {
+		grpcPort = 9081
+	}
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
+	if err != nil {
+		log.Fatalf("grpc listen: %v", err)
+	}
+	grpcServer := grpc.NewServer()
+	accountpb.RegisterAccountServiceServer(grpcServer, account.NewGrpcAccountServer(svc))
+	reflection.Register(grpcServer)
+	go func() {
+		log.Printf("Account gRPC listening on :%d", grpcPort)
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatalf("grpc serve: %v", err)
+		}
+	}()
+
+	// HTTP 服务
+	addr := fmt.Sprintf(":%d", cfg.Server.AccountPort)
+	log.Printf("Account HTTP listening on %s", addr)
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
