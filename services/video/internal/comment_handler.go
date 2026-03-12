@@ -4,17 +4,18 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"kairos/pkg/grpc"
 	"kairos/pkg/middleware"
 )
 
 // CommentHandler 评论 HTTP 处理器
 type CommentHandler struct {
 	svc        *CommentService
-	accountCli *AccountClient
+	accountCli *grpc.AccountClient
 }
 
 // NewCommentHandler 创建
-func NewCommentHandler(svc *CommentService, accountCli *AccountClient) *CommentHandler {
+func NewCommentHandler(svc *CommentService, accountCli *grpc.AccountClient) *CommentHandler {
 	return &CommentHandler{svc: svc, accountCli: accountCli}
 }
 

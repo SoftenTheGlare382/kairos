@@ -8,18 +8,19 @@ import (
 	// "time"
 
 	"github.com/gin-gonic/gin"
+	"kairos/pkg/grpc"
 	"kairos/pkg/middleware"
 )
 
 // VideoHandler 视频 HTTP 处理器
 type VideoHandler struct {
 	videoSvc   *VideoService
-	accountCli *AccountClient
+	accountCli *grpc.AccountClient
 	storage    Storage
 }
 
 // NewVideoHandler 创建
-func NewVideoHandler(videoSvc *VideoService, accountCli *AccountClient, storage Storage) *VideoHandler {
+func NewVideoHandler(videoSvc *VideoService, accountCli *grpc.AccountClient, storage Storage) *VideoHandler {
 	return &VideoHandler{videoSvc: videoSvc, accountCli: accountCli, storage: storage}
 }
 

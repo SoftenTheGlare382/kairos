@@ -4,10 +4,12 @@ package account;
 
 option go_package = "kairos/api/accountpb";
 
-// Account 服务（供 Video 等下游服务 RPC 调用）
+// Account 服务（供 Video、Social 等下游服务 RPC 调用）
 service AccountService {
   // FindByID 按 ID 获取用户
   rpc FindByID(FindByIDRequest) returns (FindByIDResponse);
+  // FindByIDs 批量按 ID 获取用户（Social 粉丝/关注列表补全用）
+  rpc FindByIDs(FindByIDsRequest) returns (FindByIDsResponse);
 }
 
 message FindByIDRequest {
@@ -15,6 +17,19 @@ message FindByIDRequest {
 }
 
 message FindByIDResponse {
+  uint32 id = 1;
+  string username = 2;
+}
+
+message FindByIDsRequest {
+  repeated uint32 ids = 1;
+}
+
+message FindByIDsResponse {
+  repeated UserInfo users = 1;
+}
+
+message UserInfo {
   uint32 id = 1;
   string username = 2;
 }

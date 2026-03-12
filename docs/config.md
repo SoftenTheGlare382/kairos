@@ -27,6 +27,9 @@ func main() {
 | Server.VideoPort | int | Video 服务端口 |
 | Account.GrpcAddr | string | Account gRPC 地址（Video 连接用） |
 | Video.AccountGrpcAddr | string | Video 调用 Account gRPC 的地址 |
+| Social.AccountGrpcAddr | string | Social 调用 Account gRPC 的地址 |
+| Server.SocialPort | int | Social HTTP 端口 |
+| Server.SocialGrpcPort | int | Social gRPC 端口（Feed 调用） |
 | Video.Storage.Type | string | 存储类型：local、qiniu |
 | Video.Storage.Local.UploadDir | string | 本地存储目录 |
 | Video.Storage.Local.StaticPrefix | string | 本地静态 URL 前缀 |

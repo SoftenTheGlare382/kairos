@@ -117,6 +117,146 @@ func (x *FindByIDResponse) GetUsername() string {
 	return ""
 }
 
+type FindByIDsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ids           []uint32               `protobuf:"varint,1,rep,packed,name=ids,proto3" json:"ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FindByIDsRequest) Reset() {
+	*x = FindByIDsRequest{}
+	mi := &file_account_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FindByIDsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FindByIDsRequest) ProtoMessage() {}
+
+func (x *FindByIDsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FindByIDsRequest.ProtoReflect.Descriptor instead.
+func (*FindByIDsRequest) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *FindByIDsRequest) GetIds() []uint32 {
+	if x != nil {
+		return x.Ids
+	}
+	return nil
+}
+
+type FindByIDsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Users         []*UserInfo            `protobuf:"bytes,1,rep,name=users,proto3" json:"users,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FindByIDsResponse) Reset() {
+	*x = FindByIDsResponse{}
+	mi := &file_account_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FindByIDsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FindByIDsResponse) ProtoMessage() {}
+
+func (x *FindByIDsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FindByIDsResponse.ProtoReflect.Descriptor instead.
+func (*FindByIDsResponse) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *FindByIDsResponse) GetUsers() []*UserInfo {
+	if x != nil {
+		return x.Users
+	}
+	return nil
+}
+
+type UserInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            uint32                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UserInfo) Reset() {
+	*x = UserInfo{}
+	mi := &file_account_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserInfo) ProtoMessage() {}
+
+func (x *UserInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_account_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserInfo.ProtoReflect.Descriptor instead.
+func (*UserInfo) Descriptor() ([]byte, []int) {
+	return file_account_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *UserInfo) GetId() uint32 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *UserInfo) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
 var File_account_proto protoreflect.FileDescriptor
 
 const file_account_proto_rawDesc = "" +
@@ -126,9 +266,17 @@ const file_account_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\rR\x02id\">\n" +
 	"\x10FindByIDResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\rR\x02id\x12\x1a\n" +
-	"\busername\x18\x02 \x01(\tR\busername2Q\n" +
+	"\busername\x18\x02 \x01(\tR\busername\"$\n" +
+	"\x10FindByIDsRequest\x12\x10\n" +
+	"\x03ids\x18\x01 \x03(\rR\x03ids\"<\n" +
+	"\x11FindByIDsResponse\x12'\n" +
+	"\x05users\x18\x01 \x03(\v2\x11.account.UserInfoR\x05users\"6\n" +
+	"\bUserInfo\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\rR\x02id\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername2\x95\x01\n" +
 	"\x0eAccountService\x12?\n" +
-	"\bFindByID\x12\x18.account.FindByIDRequest\x1a\x19.account.FindByIDResponseB\x16Z\x14kairos/api/accountpbb\x06proto3"
+	"\bFindByID\x12\x18.account.FindByIDRequest\x1a\x19.account.FindByIDResponse\x12B\n" +
+	"\tFindByIDs\x12\x19.account.FindByIDsRequest\x1a\x1a.account.FindByIDsResponseB\x16Z\x14kairos/api/accountpbb\x06proto3"
 
 var (
 	file_account_proto_rawDescOnce sync.Once
@@ -142,19 +290,25 @@ func file_account_proto_rawDescGZIP() []byte {
 	return file_account_proto_rawDescData
 }
 
-var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_account_proto_goTypes = []any{
-	(*FindByIDRequest)(nil),  // 0: account.FindByIDRequest
-	(*FindByIDResponse)(nil), // 1: account.FindByIDResponse
+	(*FindByIDRequest)(nil),   // 0: account.FindByIDRequest
+	(*FindByIDResponse)(nil),  // 1: account.FindByIDResponse
+	(*FindByIDsRequest)(nil),  // 2: account.FindByIDsRequest
+	(*FindByIDsResponse)(nil), // 3: account.FindByIDsResponse
+	(*UserInfo)(nil),          // 4: account.UserInfo
 }
 var file_account_proto_depIdxs = []int32{
-	0, // 0: account.AccountService.FindByID:input_type -> account.FindByIDRequest
-	1, // 1: account.AccountService.FindByID:output_type -> account.FindByIDResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	4, // 0: account.FindByIDsResponse.users:type_name -> account.UserInfo
+	0, // 1: account.AccountService.FindByID:input_type -> account.FindByIDRequest
+	2, // 2: account.AccountService.FindByIDs:input_type -> account.FindByIDsRequest
+	1, // 3: account.AccountService.FindByID:output_type -> account.FindByIDResponse
+	3, // 4: account.AccountService.FindByIDs:output_type -> account.FindByIDsResponse
+	3, // [3:5] is the sub-list for method output_type
+	1, // [1:3] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_account_proto_init() }
@@ -168,7 +322,7 @@ func file_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_account_proto_rawDesc), len(file_account_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

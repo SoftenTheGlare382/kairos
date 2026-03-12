@@ -44,3 +44,23 @@ func (s *grpcAccountServer) FindByID(ctx context.Context, req *accountpb.FindByI
 		Username: account.Username,
 	}, nil
 }
+
+// FindByIDs 批量按 ID 获取用户
+func (s *grpcAccountServer) FindByIDs(ctx context.Context, req *accountpb.FindByIDsRequest) (*accountpb.FindByIDsResponse, error) {
+	if req == nil || len(req.Ids) == 0 {
+		return &accountpb.FindByIDsResponse{Users: nil}, nil
+	}
+	ids := make([]uint, len(req.Ids))
+	for i, id := range req.Ids {
+		ids[i] = uint(id)
+	}
+	list, err := s.svc.FindByIDs(ctx, ids)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	users := make([]*accountpb.UserInfo, len(list))
+	for i, a := range list {
+		users[i] = &accountpb.UserInfo{Id: uint32(a.ID), Username: a.Username}
+	}
+	return &accountpb.FindByIDsResponse{Users: users}, nil
+}

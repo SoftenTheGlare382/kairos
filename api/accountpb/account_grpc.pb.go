@@ -19,17 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AccountService_FindByID_FullMethodName = "/account.AccountService/FindByID"
+	AccountService_FindByID_FullMethodName  = "/account.AccountService/FindByID"
+	AccountService_FindByIDs_FullMethodName = "/account.AccountService/FindByIDs"
 )
 
 // AccountServiceClient is the client API for AccountService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Account 服务（供 Video 等下游服务 RPC 调用）
+// Account 服务（供 Video、Social 等下游服务 RPC 调用）
 type AccountServiceClient interface {
 	// FindByID 按 ID 获取用户
 	FindByID(ctx context.Context, in *FindByIDRequest, opts ...grpc.CallOption) (*FindByIDResponse, error)
+	// FindByIDs 批量按 ID 获取用户（Social 粉丝/关注列表补全用）
+	FindByIDs(ctx context.Context, in *FindByIDsRequest, opts ...grpc.CallOption) (*FindByIDsResponse, error)
 }
 
 type accountServiceClient struct {
@@ -50,14 +53,26 @@ func (c *accountServiceClient) FindByID(ctx context.Context, in *FindByIDRequest
 	return out, nil
 }
 
+func (c *accountServiceClient) FindByIDs(ctx context.Context, in *FindByIDsRequest, opts ...grpc.CallOption) (*FindByIDsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FindByIDsResponse)
+	err := c.cc.Invoke(ctx, AccountService_FindByIDs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AccountServiceServer is the server API for AccountService service.
 // All implementations must embed UnimplementedAccountServiceServer
 // for forward compatibility.
 //
-// Account 服务（供 Video 等下游服务 RPC 调用）
+// Account 服务（供 Video、Social 等下游服务 RPC 调用）
 type AccountServiceServer interface {
 	// FindByID 按 ID 获取用户
 	FindByID(context.Context, *FindByIDRequest) (*FindByIDResponse, error)
+	// FindByIDs 批量按 ID 获取用户（Social 粉丝/关注列表补全用）
+	FindByIDs(context.Context, *FindByIDsRequest) (*FindByIDsResponse, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
 
@@ -70,6 +85,9 @@ type UnimplementedAccountServiceServer struct{}
 
 func (UnimplementedAccountServiceServer) FindByID(context.Context, *FindByIDRequest) (*FindByIDResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method FindByID not implemented")
+}
+func (UnimplementedAccountServiceServer) FindByIDs(context.Context, *FindByIDsRequest) (*FindByIDsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method FindByIDs not implemented")
 }
 func (UnimplementedAccountServiceServer) mustEmbedUnimplementedAccountServiceServer() {}
 func (UnimplementedAccountServiceServer) testEmbeddedByValue()                        {}
@@ -110,6 +128,24 @@ func _AccountService_FindByID_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccountService_FindByIDs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FindByIDsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).FindByIDs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_FindByIDs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).FindByIDs(ctx, req.(*FindByIDsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccountService_ServiceDesc is the grpc.ServiceDesc for AccountService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -120,6 +156,10 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FindByID",
 			Handler:    _AccountService_FindByID_Handler,
+		},
+		{
+			MethodName: "FindByIDs",
+			Handler:    _AccountService_FindByIDs_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

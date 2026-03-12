@@ -20,7 +20,13 @@ type Config struct {
 	Redis    RedisConfig    `yaml:"redis"`
 	Account  AccountConfig  `yaml:"account"`
 	Video    VideoConfig    `yaml:"video"`
+	Social   SocialConfig   `yaml:"social"`
 	Qiniu    QiniuConfig    `yaml:"qiniu"`
+}
+
+// SocialConfig Social 服务配置
+type SocialConfig struct {
+	AccountGrpcAddr string `yaml:"account_grpc_addr"` // Account gRPC 地址（Social 调用）
 }
 
 // VideoConfig Video 服务配置（含 RPC 调用 Account 的地址、存储类型等）
@@ -64,10 +70,12 @@ type JwtConfig struct {
 }
 // ServerConfig HTTP 服务配置
 type ServerConfig struct {
-	AccountPort    int    `yaml:"account_port"`     // Account HTTP 端口
-	AccountGrpcPort int   `yaml:"account_grpc_port"` // Account gRPC 端口
-	VideoPort      int    `yaml:"video_port"`       // Video 服务端口
-	GinMode        string `yaml:"gin_mode"`         // debug | release | test
+	AccountPort     int    `yaml:"account_port"`      // Account HTTP 端口
+	AccountGrpcPort int    `yaml:"account_grpc_port"` // Account gRPC 端口
+	VideoPort       int    `yaml:"video_port"`        // Video 服务端口
+	SocialPort      int    `yaml:"social_port"`       // Social HTTP 端口
+	SocialGrpcPort  int    `yaml:"social_grpc_port"`  // Social gRPC 端口（Feed 调用）
+	GinMode         string `yaml:"gin_mode"`          // debug | release | test
 }
 
 // DatabaseConfig MySQL 数据库配置
@@ -202,6 +210,8 @@ func LoadFromEnv() Config {
 			AccountPort:     getEnvInt("ACCOUNT_SERVER_PORT", 8081),
 			AccountGrpcPort: getEnvInt("ACCOUNT_GRPC_PORT", 9081),
 			VideoPort:       getEnvInt("VIDEO_SERVER_PORT", 8082),
+			SocialPort:      getEnvInt("SOCIAL_SERVER_PORT", 8083),
+			SocialGrpcPort:  getEnvInt("SOCIAL_GRPC_PORT", 9083),
 			GinMode:         getEnv("GIN_MODE", "debug"),
 		},
 		Jwt: JwtConfig{
@@ -224,6 +234,9 @@ func LoadFromEnv() Config {
 		Account: AccountConfig{
 			BaseURL:  getEnv("ACCOUNT_SERVICE_URL", "http://127.0.0.1:8081"),
 			GrpcAddr: getEnv("ACCOUNT_GRPC_ADDR", "127.0.0.1:9081"),
+		},
+		Social: SocialConfig{
+			AccountGrpcAddr: getEnv("SOCIAL_ACCOUNT_GRPC_ADDR", getEnv("ACCOUNT_GRPC_ADDR", "127.0.0.1:9081")),
 		},
 		Video: VideoConfig{
 			AccountGrpcAddr: getEnv("VIDEO_ACCOUNT_GRPC_ADDR", getEnv("ACCOUNT_GRPC_ADDR", "127.0.0.1:9081")),

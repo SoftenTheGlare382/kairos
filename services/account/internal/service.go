@@ -92,6 +92,11 @@ func (s *Service) FindByUsername(ctx context.Context, username string) (*Account
 	return s.repo.FindByUsername(ctx, username)
 }
 
+// FindByIDs 批量按 ID 查询
+func (s *Service) FindByIDs(ctx context.Context, ids []uint) ([]Account, error) {
+	return s.repo.FindByIDs(ctx, ids)
+}
+
 // Login 登录（软删除账户不会查到）
 func (s *Service) Login(ctx context.Context, username, password string) (string, error) {
 	account, err := s.repo.FindByUsername(ctx, username)

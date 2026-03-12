@@ -72,3 +72,15 @@ func (r *Repository) FindByUsername(ctx context.Context, username string) (*Acco
 	return &account, nil
 }
 
+// FindByIDs 批量按 ID 查询（供 Social 等下游服务补全用户信息）
+func (r *Repository) FindByIDs(ctx context.Context, ids []uint) ([]Account, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var list []Account
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+

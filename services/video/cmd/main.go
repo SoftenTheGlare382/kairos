@@ -6,9 +6,10 @@ import (
 	"log"
 	"net/http"
 
+	"kairos/pkg/grpc"
 	"kairos/pkg/config"
-	"kairos/pkg/redis"
 	"kairos/pkg/middleware"
+	"kairos/pkg/redis"
 	video "kairos/services/video/internal"
 
 	"github.com/gin-gonic/gin"
@@ -88,12 +89,11 @@ func main() {
 	likeSvc := video.NewLikeService(db, likeRepo, videoRepo)
 	commentSvc := video.NewCommentService(commentRepo, videoRepo)
 
-	var accountCli *video.AccountClient
 	grpcAddr := cfg.Video.AccountGrpcAddr
 	if grpcAddr == "" {
 		grpcAddr = cfg.Account.GrpcAddr
 	}
-	accountCli, err = video.NewAccountClient(grpcAddr)
+	accountCli, err := grpc.NewAccountClient(grpcAddr)
 	if err != nil {
 		log.Fatalf("account gRPC client: %v", err)
 	}

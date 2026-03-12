@@ -25,11 +25,17 @@ server:
   account_port: ${ACCOUNT_SERVER_PORT:-8081}       # Account HTTP 端口
   account_grpc_port: ${ACCOUNT_GRPC_PORT:-9081}    # Account gRPC 端口（服务间 RPC）
   video_port: ${VIDEO_SERVER_PORT:-8082}           # Video 服务端口
+  social_port: ${SOCIAL_SERVER_PORT:-8083}         # Social HTTP 端口
+  social_grpc_port: ${SOCIAL_GRPC_PORT:-9083}     # Social gRPC 端口（Feed 调用）
   gin_mode: ${GIN_MODE:-debug}             # debug | release | test
 # Video 等下游服务调用 Account 的地址
 account:
   base_url: ${ACCOUNT_SERVICE_URL:-http://127.0.0.1:8081}
   grpc_addr: ${ACCOUNT_GRPC_ADDR:-127.0.0.1:9081}  # gRPC 地址（服务间调用）
+
+# Social 服务配置
+social:
+  account_grpc_addr: ${ACCOUNT_GRPC_ADDR:-127.0.0.1:9081}  # Social 调用 Account gRPC 的地址
 
 # Video 服务配置
 video:

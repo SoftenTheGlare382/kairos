@@ -65,13 +65,14 @@
 
 ---
 
-## 6. Account 客户端（`account_client.go`）
+## 6. Account 客户端（`pkg/grpc`）
 
-**作用**：通过 HTTP 调用 Account 服务的 `GET /account/findByID?id=xxx`。
+**作用**：调用 Account 服务的 gRPC 接口获取用户信息（共享包，Video、Social 等下游服务复用）。
 
-- **GetByID(ctx, accountID)**：返回用户信息（至少包含 Username）
+- **GetByID(ctx, id)**：按 ID 获取用户
+- **GetByIDs(ctx, ids)**：批量按 ID 获取用户
 
-**意义**：Video 服务不直接访问 Account 数据库，通过 RPC/HTTP 获取用户信息，符合微服务拆分原则。
+**意义**：Video 服务不直接访问 Account 数据库，通过 gRPC 获取用户信息，符合微服务拆分原则。
 
 ---
 
