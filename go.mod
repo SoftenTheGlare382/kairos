@@ -3,8 +3,10 @@ module kairos
 go 1.25.0
 
 require (
+	github.com/bits-and-blooms/bloom/v3 v3.7.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.79.2
@@ -13,6 +15,7 @@ require (
 )
 
 require (
+	github.com/bits-and-blooms/bitset v1.24.2 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect

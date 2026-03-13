@@ -21,12 +21,31 @@ type Config struct {
 	Account  AccountConfig  `yaml:"account"`
 	Video    VideoConfig    `yaml:"video"`
 	Social   SocialConfig   `yaml:"social"`
+	Feed     FeedConfig     `yaml:"feed"`
 	Qiniu    QiniuConfig    `yaml:"qiniu"`
+	RabbitMQ RabbitMQConfig `yaml:"rabbitmq"`
+	Worker   WorkerConfig   `yaml:"worker"`
+}
+
+// RabbitMQConfig RabbitMQ 配置（Worker 消费、Video/Social 发布）
+type RabbitMQConfig struct {
+	URL string `yaml:"url"`
+}
+
+// WorkerConfig Worker 配置
+type WorkerConfig struct {
+	SyncIntervalMin int `yaml:"sync_interval_min"` // 全量同步间隔（分钟），0=不定时同步
 }
 
 // SocialConfig Social 服务配置
 type SocialConfig struct {
 	AccountGrpcAddr string `yaml:"account_grpc_addr"` // Account gRPC 地址（Social 调用）
+}
+
+// FeedConfig Feed 服务配置（依赖 Video、Social gRPC）
+type FeedConfig struct {
+	VideoGrpcAddr  string `yaml:"video_grpc_addr"`  // Video gRPC 地址
+	SocialGrpcAddr string `yaml:"social_grpc_addr"` // Social gRPC 地址
 }
 
 // VideoConfig Video 服务配置（含 RPC 调用 Account 的地址、存储类型等）
@@ -72,9 +91,11 @@ type JwtConfig struct {
 type ServerConfig struct {
 	AccountPort     int    `yaml:"account_port"`      // Account HTTP 端口
 	AccountGrpcPort int    `yaml:"account_grpc_port"` // Account gRPC 端口
-	VideoPort       int    `yaml:"video_port"`        // Video 服务端口
+	VideoPort       int    `yaml:"video_port"`        // Video HTTP 端口
+	VideoGrpcPort   int    `yaml:"video_grpc_port"`   // Video gRPC 端口（Feed 调用）
 	SocialPort      int    `yaml:"social_port"`       // Social HTTP 端口
 	SocialGrpcPort  int    `yaml:"social_grpc_port"`  // Social gRPC 端口（Feed 调用）
+	FeedPort        int    `yaml:"feed_port"`         // Feed HTTP 端口
 	GinMode         string `yaml:"gin_mode"`          // debug | release | test
 }
 
@@ -205,13 +226,15 @@ func Load() Config {
 
 // LoadFromEnv 从环境变量加载配置（兜底）
 func LoadFromEnv() Config {
-	return Config{
+	cfg := Config{
 		Server: ServerConfig{
 			AccountPort:     getEnvInt("ACCOUNT_SERVER_PORT", 8081),
 			AccountGrpcPort: getEnvInt("ACCOUNT_GRPC_PORT", 9081),
 			VideoPort:       getEnvInt("VIDEO_SERVER_PORT", 8082),
+			VideoGrpcPort:   getEnvInt("VIDEO_GRPC_PORT", 9082),
 			SocialPort:      getEnvInt("SOCIAL_SERVER_PORT", 8083),
 			SocialGrpcPort:  getEnvInt("SOCIAL_GRPC_PORT", 9083),
+			FeedPort:        getEnvInt("FEED_SERVER_PORT", 8084),
 			GinMode:         getEnv("GIN_MODE", "debug"),
 		},
 		Jwt: JwtConfig{
@@ -238,6 +261,10 @@ func LoadFromEnv() Config {
 		Social: SocialConfig{
 			AccountGrpcAddr: getEnv("SOCIAL_ACCOUNT_GRPC_ADDR", getEnv("ACCOUNT_GRPC_ADDR", "127.0.0.1:9081")),
 		},
+		Feed: FeedConfig{
+			VideoGrpcAddr:  getEnv("FEED_VIDEO_GRPC_ADDR", "127.0.0.1:9082"),
+			SocialGrpcAddr: getEnv("FEED_SOCIAL_GRPC_ADDR", "127.0.0.1:9083"),
+		},
 		Video: VideoConfig{
 			AccountGrpcAddr: getEnv("VIDEO_ACCOUNT_GRPC_ADDR", getEnv("ACCOUNT_GRPC_ADDR", "127.0.0.1:9081")),
 			Storage: StorageConfig{
@@ -262,7 +289,14 @@ func LoadFromEnv() Config {
 			Domain:    getEnv("QINIU_DOMAIN", ""),
 			Zone:      getEnv("QINIU_ZONE", "z0"),
 		},
+		RabbitMQ: RabbitMQConfig{
+			URL: getEnv("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"),
+		},
+		Worker: WorkerConfig{
+			SyncIntervalMin: getEnvInt("WORKER_SYNC_INTERVAL_MIN", 5),
+		},
 	}
+	return cfg
 }
 
 func getEnv(key, defaultVal string) string {

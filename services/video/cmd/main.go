@@ -4,15 +4,24 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"strconv"
+	"time"
 
-	"kairos/pkg/grpc"
+	"kairos/api/videopb"
+	"kairos/pkg/bloomfilter"
 	"kairos/pkg/config"
+	"kairos/pkg/events"
+	grpcpkg "kairos/pkg/grpc"
 	"kairos/pkg/middleware"
+	"kairos/pkg/rabbitmq"
 	"kairos/pkg/redis"
 	video "kairos/services/video/internal"
 
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -29,7 +38,7 @@ func main() {
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
 
-	if err := db.AutoMigrate(&video.Video{}, &video.Like{}, &video.Comment{}); err != nil {
+	if err := db.AutoMigrate(&video.Video{}, &video.Like{}, &video.Comment{}, &video.PlayRecord{}, &video.Favorite{}); err != nil {
 		log.Fatalf("auto migrate: %v", err)
 	}
 
@@ -80,20 +89,43 @@ func main() {
 		log.Printf("using local storage (dir=%s)", local.UploadDir)
 	}
 
+	// RabbitMQ（可选，用于发布 like/comment/popularity 事件给 Worker）
+	var publisher *events.Publisher
+	if cfg.RabbitMQ.URL != "" {
+		if mq, err := rabbitmq.New(cfg.RabbitMQ.URL); err != nil {
+			log.Printf("rabbitmq connect failed (worker events disabled): %v", err)
+		} else {
+			defer mq.Close()
+			publisher = events.NewPublisher(mq)
+			log.Printf("rabbitmq connected, publishing like/comment/popularity events")
+		}
+	}
+
 	// 仓储与服务
 	videoRepo := video.NewVideoRepository(db)
 	likeRepo := video.NewLikeRepository(db)
 	commentRepo := video.NewCommentRepository(db)
+	playRecordRepo := video.NewPlayRecordRepository(db)
+	favoriteRepo := video.NewFavoriteRepository(db)
 
-	videoSvc := video.NewVideoService(videoRepo, storage)
-	likeSvc := video.NewLikeService(db, likeRepo, videoRepo)
-	commentSvc := video.NewCommentService(commentRepo, videoRepo)
+	videoBloom := bloomfilter.New(10_000_000, 0.01)
+	seedVideoBloom(context.Background(), videoBloom, videoRepo)
+	videoBloom.SetReady()
+
+	// 定时重建布隆过滤器，清除已删除视频
+	go runVideoBloomRebuild(videoRepo, videoBloom, 6*time.Hour)
+
+	videoSvc := video.NewVideoService(videoRepo, storage, rdb, videoBloom)
+	likeSvc := video.NewLikeService(db, likeRepo, videoRepo, publisher, rdb)
+	commentSvc := video.NewCommentService(commentRepo, videoRepo, publisher, rdb, videoBloom)
+	playSvc := video.NewPlayService(db, playRecordRepo, videoRepo, publisher, publisher)
+	favoriteSvc := video.NewFavoriteService(db, favoriteRepo, videoRepo, publisher)
 
 	grpcAddr := cfg.Video.AccountGrpcAddr
 	if grpcAddr == "" {
 		grpcAddr = cfg.Account.GrpcAddr
 	}
-	accountCli, err := grpc.NewAccountClient(grpcAddr)
+	accountCli, err := grpcpkg.NewAccountClient(grpcAddr)
 	if err != nil {
 		log.Fatalf("account gRPC client: %v", err)
 	}
@@ -102,6 +134,27 @@ func main() {
 	videoHandler := video.NewVideoHandler(videoSvc, accountCli, storage)
 	likeHandler := video.NewLikeHandler(likeSvc)
 	commentHandler := video.NewCommentHandler(commentSvc, accountCli)
+	playHandler := video.NewPlayHandler(playSvc, accountCli)
+	favoriteHandler := video.NewFavoriteHandler(favoriteSvc)
+
+	// 启动 Video gRPC 服务（供 Feed 调用）
+	grpcPort := cfg.Server.VideoGrpcPort
+	if grpcPort == 0 {
+		grpcPort = 9082
+	}
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
+	if err != nil {
+		log.Fatalf("video grpc listen: %v", err)
+	}
+	grpcServer := grpc.NewServer()
+	videopb.RegisterVideoServiceServer(grpcServer, video.NewGrpcVideoServer(videoRepo, likeRepo, rdb))
+	reflection.Register(grpcServer)
+	go func() {
+		log.Printf("Video gRPC listening on :%d", grpcPort)
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatalf("video grpc serve: %v", err)
+		}
+	}()
 
 	gin.SetMode(cfg.Server.GinMode)
 	r := gin.Default()
@@ -130,6 +183,13 @@ func main() {
 		protected.POST("/video/uploadCover", videoHandler.UploadCover)
 		protected.POST("/video/publish", videoHandler.PublishVideo)
 		protected.POST("/video/delete", videoHandler.DeleteVideo)
+		protected.POST("/video/recordPlay", playHandler.RecordPlay)
+		protected.POST("/video/listPlayRecords", playHandler.ListPlayRecords)
+
+		protected.POST("/video/favorite", favoriteHandler.Favorite)
+		protected.POST("/video/unfavorite", favoriteHandler.Unfavorite)
+		protected.POST("/video/isFavorited", favoriteHandler.IsFavorited)
+		protected.POST("/video/listMyFavoritedVideos", favoriteHandler.ListMyFavoritedVideos)
 
 		protected.POST("/like/like", likeHandler.Like)
 		protected.POST("/like/unlike", likeHandler.Unlike)
@@ -148,6 +208,39 @@ func main() {
 	log.Printf("Video service listening on %s", addr)
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("serve: %v", err)
+	}
+}
+
+func seedVideoBloom(ctx context.Context, bloom *bloomfilter.Filter, repo *video.VideoRepository) {
+	keys := collectVideoBloomKeys(ctx, repo)
+	if len(keys) > 0 {
+		bloom.Rebuild(keys)
+	}
+}
+
+func collectVideoBloomKeys(ctx context.Context, repo *video.VideoRepository) []string {
+	ids, err := repo.ListAllIDs(ctx)
+	if err != nil {
+		return nil
+	}
+	keys := make([]string, 0, len(ids))
+	for _, id := range ids {
+		keys = append(keys, "video:"+strconv.FormatUint(uint64(id), 10))
+	}
+	return keys
+}
+
+func runVideoBloomRebuild(repo *video.VideoRepository, bloom *bloomfilter.Filter, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		keys := collectVideoBloomKeys(ctx, repo)
+		cancel()
+		if len(keys) > 0 {
+			bloom.Rebuild(keys)
+			log.Printf("video bloom filter rebuilt with %d keys", len(keys))
+		}
 	}
 }
 

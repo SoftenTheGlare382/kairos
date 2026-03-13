@@ -12,7 +12,10 @@ require (
 )
 
 require (
+	github.com/bits-and-blooms/bitset v1.24.2 // indirect
+	github.com/bits-and-blooms/bloom/v3 v3.7.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
+	github.com/rabbitmq/amqp091-go v1.10.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
 )

@@ -64,3 +64,35 @@ func GetAccountID(c *gin.Context) (uint, bool) {
 	id, ok := v.(uint)
 	return id, ok
 }
+
+// OptionalJWTAuth 可选鉴权：有有效 Token 时注入 accountID/username，无 Token 时继续执行
+// 用于 Feed 等可匿名访问的接口，登录用户可获取 is_liked 等个性化数据
+func OptionalJWTAuth(cache *redis.Client, cfgJwt config.JwtConfig) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenString := extractToken(c)
+		if tokenString == "" {
+			c.Next()
+			return
+		}
+		claims, err := auth.ParseToken(tokenString, cfgJwt)
+		if err != nil {
+			c.Next()
+			return
+		}
+		if cache == nil {
+			c.Next()
+			return
+		}
+		key := fmt.Sprintf("account:%d", claims.AccountID)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 50*time.Millisecond)
+		defer cancel()
+		b, err := cache.GetBytes(ctx, key)
+		if err != nil || string(b) != tokenString {
+			c.Next()
+			return
+		}
+		c.Set("accountID", claims.AccountID)
+		c.Set("username", claims.Username)
+		c.Next()
+	}
+}

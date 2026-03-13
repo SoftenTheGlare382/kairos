@@ -6,7 +6,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"time"
 
+	"kairos/pkg/bloomfilter"
 	"kairos/pkg/config"
 	"kairos/pkg/redis"
 	account "kairos/services/account/internal"
@@ -48,9 +50,15 @@ func main() {
 	}
 	defer rdb.Close()
 	cache := rdb
-
+	bloom := bloomfilter.New(1_000_000, 0.01)
 	repo := account.NewRepository(db)
-	svc := account.NewService(repo, cache, cfg.Jwt)
+	seedAccountBloom(context.Background(), bloom, repo)
+	bloom.SetReady()
+
+	// 定时重建布隆过滤器，清除已删除账户
+	go runAccountBloomRebuild(repo, bloom, 6*time.Hour)
+
+	svc := account.NewService(repo, cache, cfg.Jwt, bloom)
 	handler := account.NewHandler(svc)
 
 	gin.SetMode(cfg.Server.GinMode)
@@ -105,6 +113,39 @@ func main() {
 	log.Printf("Account HTTP listening on %s", addr)
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("serve: %v", err)
+	}
+}
+
+func seedAccountBloom(ctx context.Context, bloom *bloomfilter.Filter, repo *account.Repository) {
+	keys := collectAccountBloomKeys(ctx, repo)
+	if len(keys) > 0 {
+		bloom.Rebuild(keys)
+	}
+}
+
+func collectAccountBloomKeys(ctx context.Context, repo *account.Repository) []string {
+	list, err := repo.ListAllIDAndUsername(ctx)
+	if err != nil {
+		return nil
+	}
+	keys := make([]string, 0, len(list)*2)
+	for _, a := range list {
+		keys = append(keys, "account:id:"+fmt.Sprintf("%d", a.ID), "account:username:"+a.Username)
+	}
+	return keys
+}
+
+func runAccountBloomRebuild(repo *account.Repository, bloom *bloomfilter.Filter, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		keys := collectAccountBloomKeys(ctx, repo)
+		cancel()
+		if len(keys) > 0 {
+			bloom.Rebuild(keys)
+			log.Printf("account bloom filter rebuilt with %d keys", len(keys))
+		}
 	}
 }
 

@@ -2,18 +2,24 @@ package account
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"kairos/pkg/auth"
+	"kairos/pkg/bloomfilter"
 	"kairos/pkg/config"
 	"kairos/pkg/redis"
 
 	"github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
+
+const userInfoCacheTTL = 10 * time.Minute
 
 var (
 	ErrUsernameTaken    = errors.New("username already exists")
@@ -26,11 +32,12 @@ type Service struct {
 	repo   *Repository
 	cache  *redis.Client
 	cfgJwt config.JwtConfig
+	bloom  *bloomfilter.Filter // 可选，防缓存穿透
 }
 
 // NewService 创建服务
-func NewService(repo *Repository, cache *redis.Client, cfgJwt config.JwtConfig) *Service {
-	return &Service{repo: repo, cache: cache, cfgJwt: cfgJwt}
+func NewService(repo *Repository, cache *redis.Client, cfgJwt config.JwtConfig, bloom *bloomfilter.Filter) *Service {
+	return &Service{repo: repo, cache: cache, cfgJwt: cfgJwt, bloom: bloom}
 }
 
 // Create 注册（bcrypt 内置盐值）
@@ -40,13 +47,24 @@ func (s *Service) Create(ctx context.Context, account *Account) error {
 		return err
 	}
 	account.Password = string(hash)
-	return s.repo.Create(ctx, account)
+	if err := s.repo.Create(ctx, account); err != nil {
+		return err
+	}
+	if s.bloom != nil {
+		s.bloom.Add("account:id:" + strconv.FormatUint(uint64(account.ID), 10))
+		s.bloom.Add("account:username:" + account.Username)
+	}
+	return nil
 }
 
 // Rename 重命名
 func (s *Service) Rename(ctx context.Context, accountID uint, newUsername string) (string, error) {
 	if newUsername == "" {
 		return "", ErrNewUsernameRequired
+	}
+	old, err := s.repo.FindByID(ctx, accountID)
+	if err != nil {
+		return "", err
 	}
 	token, err := auth.GenerateToken(accountID, newUsername, s.cfgJwt)
 	if err != nil {
@@ -58,6 +76,10 @@ func (s *Service) Rename(ctx context.Context, accountID uint, newUsername string
 			return "", ErrUsernameTaken
 		}
 		return "", err
+	}
+	s.invalidateUserCache(ctx, old)
+	if s.bloom != nil {
+		s.bloom.Add("account:username:" + newUsername)
 	}
 	s.setCache(ctx, accountID, token)
 	return token, nil
@@ -82,19 +104,102 @@ func (s *Service) ChangePassword(ctx context.Context, username, oldPassword, new
 	return s.Logout(ctx, account.ID)
 }
 
-// FindByID 按 ID 查询
+// FindByID 按 ID 查询（读缓存，穿透写缓存；布隆过滤器防穿透）
 func (s *Service) FindByID(ctx context.Context, id uint) (*Account, error) {
-	return s.repo.FindByID(ctx, id)
+	if s.bloom != nil && s.bloom.ShouldReject("account:id:"+strconv.FormatUint(uint64(id), 10)) {
+		log.Printf("bloom reject: account:id:%d", id)
+		return nil, gorm.ErrRecordNotFound
+	}
+	if s.cache != nil {
+		if a := s.getUserFromCacheByID(ctx, id); a != nil {
+			return a, nil
+		}
+	}
+	a, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if a != nil && s.cache != nil {
+		s.setUserCache(ctx, a)
+	}
+	return a, err
 }
 
-// FindByUsername 按用户名查询
+// FindByUsername 按用户名查询（读缓存，穿透写缓存；布隆过滤器防穿透）
 func (s *Service) FindByUsername(ctx context.Context, username string) (*Account, error) {
-	return s.repo.FindByUsername(ctx, username)
+	if s.bloom != nil && s.bloom.ShouldReject("account:username:"+username) {
+		log.Printf("bloom reject: account:username:%s", username)
+		return nil, gorm.ErrRecordNotFound
+	}
+	if s.cache != nil {
+		if a := s.getUserFromCacheByUsername(ctx, username); a != nil {
+			return a, nil
+		}
+	}
+	a, err := s.repo.FindByUsername(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	if a != nil && s.cache != nil {
+		s.setUserCache(ctx, a)
+	}
+	return a, err
 }
 
-// FindByIDs 批量按 ID 查询
+// FindByIDs 批量按 ID 查询（布隆过滤不存在的 id，再读缓存/DB）
 func (s *Service) FindByIDs(ctx context.Context, ids []uint) ([]Account, error) {
-	return s.repo.FindByIDs(ctx, ids)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	toFetch := make([]uint, 0, len(ids))
+	if s.bloom != nil {
+		for _, id := range ids {
+			if s.bloom.ShouldReject("account:id:" + strconv.FormatUint(uint64(id), 10)) {
+				log.Printf("bloom reject: account:id:%d (FindByIDs)", id)
+			} else {
+				toFetch = append(toFetch, id)
+			}
+		}
+	} else {
+		toFetch = ids
+	}
+	if len(toFetch) == 0 {
+		return nil, nil
+	}
+	cached := make(map[uint]Account)
+	miss := make([]uint, 0, len(toFetch))
+	if s.cache != nil {
+		for _, id := range toFetch {
+			if a := s.getUserFromCacheByID(ctx, id); a != nil {
+				cached[id] = *a
+			} else {
+				miss = append(miss, id)
+			}
+		}
+	} else {
+		miss = toFetch
+	}
+		if len(miss) > 0 {
+		list, err := s.repo.FindByIDs(ctx, miss)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range list {
+			cached[a.ID] = a
+			if s.cache != nil {
+				s.setUserCache(ctx, &a)
+			}
+		}
+	} else if s.cache != nil && len(miss) == 0 {
+		log.Printf("cache hit: account:FindByIDs (all %d ids)", len(toFetch))
+	}
+	out := make([]Account, 0, len(ids))
+	for _, id := range ids {
+		if a, ok := cached[id]; ok {
+			out = append(out, a)
+		}
+	}
+	return out, nil
 }
 
 // Login 登录（软删除账户不会查到）
@@ -122,13 +227,15 @@ func (s *Service) Logout(ctx context.Context, accountID uint) error {
 	return nil
 }
 
-// Cancel 注销账户（软删除，清除 Redis Token）
+// Cancel 注销账户（软删除，清除 Redis Token 与用户缓存）
 func (s *Service) Cancel(ctx context.Context, accountID uint) error {
-	if _, err := s.repo.FindByID(ctx, accountID); err != nil {
+	old, err := s.repo.FindByID(ctx, accountID)
+	if err != nil {
 		return err
 	}
 	_ = s.repo.UpdateLastLogoutAt(ctx, accountID, time.Now())
 	s.delCache(ctx, accountID)
+	s.invalidateUserCache(ctx, old)
 	return s.repo.Delete(ctx, accountID)
 }
 
@@ -159,7 +266,7 @@ func (s *Service) setCache(ctx context.Context, accountID uint, token string) {
 	ctx2, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 	defer cancel()
 	key := fmt.Sprintf("account:%d", accountID)
-	if err := s.cache.SetBytes(ctx2, key, []byte(token), 24*time.Hour); err != nil {
+	if err := s.cache.SetBytes(ctx2, key, []byte(token), redis.TTLWithJitter(24*time.Hour, 0.2)); err != nil {
 		log.Printf("cache set failed: %v", err)
 	}
 }
@@ -174,4 +281,68 @@ func (s *Service) delCache(ctx context.Context, accountID uint) {
 	if err := s.cache.Del(ctx2, key); err != nil {
 		log.Printf("cache del failed: %v", err)
 	}
+}
+
+// 用户信息缓存 key：account:info:{id}, account:username:{username}
+func userInfoKey(id uint) string { return fmt.Sprintf("account:info:%d", id) }
+func userUsernameKey(username string) string { return fmt.Sprintf("account:username:%s", username) }
+
+func (s *Service) setUserCache(ctx context.Context, a *Account) {
+	if s.cache == nil || a == nil {
+		return
+	}
+	b, err := json.Marshal(a)
+	if err != nil {
+		return
+	}
+	ctx2, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	_ = s.cache.SetBytes(ctx2, userInfoKey(a.ID), b, redis.TTLWithJitter(userInfoCacheTTL, 0.2))
+	_ = s.cache.SetBytes(ctx2, userUsernameKey(a.Username), b, redis.TTLWithJitter(userInfoCacheTTL, 0.2))
+}
+
+func (s *Service) getUserFromCacheByID(ctx context.Context, id uint) *Account {
+	if s.cache == nil {
+		return nil
+	}
+	ctx2, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	b, err := s.cache.GetBytes(ctx2, userInfoKey(id))
+	if err != nil || len(b) == 0 {
+		return nil
+	}
+	var a Account
+	if json.Unmarshal(b, &a) != nil {
+		return nil
+	}
+	log.Printf("cache hit: account:info:%d", id)
+	return &a
+}
+
+func (s *Service) getUserFromCacheByUsername(ctx context.Context, username string) *Account {
+	if s.cache == nil {
+		return nil
+	}
+	ctx2, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	b, err := s.cache.GetBytes(ctx2, userUsernameKey(username))
+	if err != nil || len(b) == 0 {
+		return nil
+	}
+	var a Account
+	if json.Unmarshal(b, &a) != nil {
+		return nil
+	}
+	log.Printf("cache hit: account:username:%s", username)
+	return &a
+}
+
+func (s *Service) invalidateUserCache(ctx context.Context, a *Account) {
+	if s.cache == nil || a == nil {
+		return
+	}
+	ctx2, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	_ = s.cache.Del(ctx2, userInfoKey(a.ID))
+	_ = s.cache.Del(ctx2, userUsernameKey(a.Username))
 }

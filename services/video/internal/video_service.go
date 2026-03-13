@@ -2,19 +2,33 @@ package video
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
+	"strconv"
 	"strings"
+	"time"
+
+	"kairos/pkg/bloomfilter"
+	"kairos/pkg/redis"
 )
+
+const videoDetailCacheTTL = 5 * time.Minute
+
+func videoDetailKey(id uint) string { return fmt.Sprintf("video:detail:%d", id) }
 
 // VideoService 视频服务
 type VideoService struct {
 	repo    *VideoRepository
 	storage Storage
+	rdb     *redis.Client      // 可选，GetDetail 缓存、Delete 时失效
+	bloom   *bloomfilter.Filter // 可选，防缓存穿透
 }
 
 // NewVideoService 创建
-func NewVideoService(repo *VideoRepository, storage Storage) *VideoService {
-	return &VideoService{repo: repo, storage: storage}
+func NewVideoService(repo *VideoRepository, storage Storage, rdb *redis.Client, bloom *bloomfilter.Filter) *VideoService {
+	return &VideoService{repo: repo, storage: storage, rdb: rdb, bloom: bloom}
 }
 
 // Publish 发布视频
@@ -34,7 +48,16 @@ func (s *VideoService) Publish(ctx context.Context, v *Video) error {
 	if v.CoverURL == "" {
 		return errors.New("cover_url is required")
 	}
-	return s.repo.Create(ctx, v)
+	if err := s.repo.Create(ctx, v); err != nil {
+		return err
+	}
+	if s.bloom != nil {
+		s.bloom.Add("video:" + strconv.FormatUint(uint64(v.ID), 10))
+	}
+	if s.rdb != nil {
+		s.rdb.Del(ctx, "feed:latest:ids")
+	}
+	return nil
 }
 
 // Delete 删除视频（仅作者可删）
@@ -49,7 +72,15 @@ func (s *VideoService) Delete(ctx context.Context, id uint, authorID uint) error
 	if v.AuthorID != authorID {
 		return errors.New("unauthorized")
 	}
-	return s.repo.Delete(ctx, id)
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+	if s.rdb != nil {
+		s.rdb.Del(ctx, videoDetailKey(id))
+		s.rdb.Del(ctx, "feed:latest:ids")       // 最新列表含该视频 ID，需失效
+		s.rdb.Del(ctx, fmt.Sprintf("comment:list:%d", id)) // 该视频评论列表可废弃
+	}
+	return nil
 }
 
 // ListByAuthorID 按作者列表
@@ -57,9 +88,32 @@ func (s *VideoService) ListByAuthorID(ctx context.Context, authorID uint) ([]Vid
 	return s.repo.ListByAuthorID(ctx, authorID)
 }
 
-// GetDetail 视频详情
+// GetDetail 视频详情（布隆过滤防穿透，有 rdb 时读缓存）
 func (s *VideoService) GetDetail(ctx context.Context, id uint) (*Video, error) {
-	return s.repo.GetByID(ctx, id)
+	if s.bloom != nil && s.bloom.ShouldReject("video:"+strconv.FormatUint(uint64(id), 10)) {
+		log.Printf("bloom reject: video:%d", id)
+		return nil, nil
+	}
+	if s.rdb != nil {
+		b, err := s.rdb.GetBytes(ctx, videoDetailKey(id))
+		if err == nil && len(b) > 0 {
+			var v Video
+			if json.Unmarshal(b, &v) == nil {
+				log.Printf("cache hit: video:detail:%d", id)
+				return &v, nil
+			}
+		}
+	}
+	v, err := s.repo.GetByID(ctx, id)
+	if err != nil || v == nil {
+		return v, err
+	}
+	if s.rdb != nil {
+		if b, err := json.Marshal(v); err == nil {
+			s.rdb.SetBytes(ctx, videoDetailKey(id), b, redis.TTLWithJitter(videoDetailCacheTTL, 0.2))
+		}
+	}
+	return v, nil
 }
 
 // ListByAuthorIDs 按多个作者列表（供 Feed 等调用）

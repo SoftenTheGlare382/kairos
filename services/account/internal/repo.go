@@ -84,3 +84,13 @@ func (r *Repository) FindByIDs(ctx context.Context, ids []uint) ([]Account, erro
 	return list, nil
 }
 
+// ListAllIDAndUsername 列出所有未删除账户的 id、username（用于布隆过滤器回填）
+func (r *Repository) ListAllIDAndUsername(ctx context.Context) ([]struct{ ID uint; Username string }, error) {
+	var list []struct {
+		ID       uint
+		Username string
+	}
+	err := r.db.WithContext(ctx).Model(&Account{}).Select("id", "username").Find(&list).Error
+	return list, err
+}
+

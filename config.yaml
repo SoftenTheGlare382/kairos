@@ -16,6 +16,13 @@ redis:
   password: ${REDIS_PASSWORD:-}
   db: ${REDIS_DB:-0}
 
+rabbitmq:
+  url: ${RABBITMQ_URL:-amqp://guest:guest@127.0.0.1:5672/}
+
+# Worker 配置
+worker:
+  sync_interval_min: ${WORKER_SYNC_INTERVAL_MIN:-5}  # 全量同步间隔（分钟），0=仅启动时同步
+
 jwt:
   secret_key: ${JWT_SECRET:-change-me-in-env}
   token_timeout: 1440  # 单位：分钟，1440=24h
@@ -24,9 +31,11 @@ jwt:
 server:
   account_port: ${ACCOUNT_SERVER_PORT:-8081}       # Account HTTP 端口
   account_grpc_port: ${ACCOUNT_GRPC_PORT:-9081}    # Account gRPC 端口（服务间 RPC）
-  video_port: ${VIDEO_SERVER_PORT:-8082}           # Video 服务端口
+  video_port: ${VIDEO_SERVER_PORT:-8082}           # Video HTTP 端口
+  video_grpc_port: ${VIDEO_GRPC_PORT:-9082}       # Video gRPC 端口（Feed 调用）
   social_port: ${SOCIAL_SERVER_PORT:-8083}         # Social HTTP 端口
   social_grpc_port: ${SOCIAL_GRPC_PORT:-9083}     # Social gRPC 端口（Feed 调用）
+  feed_port: ${FEED_SERVER_PORT:-8084}            # Feed HTTP 端口
   gin_mode: ${GIN_MODE:-debug}             # debug | release | test
 # Video 等下游服务调用 Account 的地址
 account:
@@ -36,6 +45,11 @@ account:
 # Social 服务配置
 social:
   account_grpc_addr: ${ACCOUNT_GRPC_ADDR:-127.0.0.1:9081}  # Social 调用 Account gRPC 的地址
+
+# Feed 服务配置（无独立 DB，依赖 Video、Social gRPC）
+feed:
+  video_grpc_addr: ${FEED_VIDEO_GRPC_ADDR:-127.0.0.1:9082}
+  social_grpc_addr: ${FEED_SOCIAL_GRPC_ADDR:-127.0.0.1:9083}
 
 # Video 服务配置
 video:

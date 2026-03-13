@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package video;
+
+option go_package = "kairos/api/videopb";
+
+// Video 服务（供 Feed 等下游服务 RPC 调用）
+service VideoService {
+  // ListLatest 最新视频列表（分页）
+  rpc ListLatest(ListLatestRequest) returns (ListLatestResponse);
+  // ListByAuthorIDs 按多作者获取视频列表
+  rpc ListByAuthorIDs(ListByAuthorIDsRequest) returns (ListByAuthorIDsResponse);
+  // GetByIDs 按 ID 列表获取视频
+  rpc GetByIDs(GetByIDsRequest) returns (GetByIDsResponse);
+  // ListByPopularity 按热度排序视频列表（分页）
+  rpc ListByPopularity(ListByPopularityRequest) returns (ListByPopularityResponse);
+  // BatchIsLiked 批量查询用户是否已点赞
+  rpc BatchIsLiked(BatchIsLikedRequest) returns (BatchIsLikedResponse);
+}
+
+message ListLatestRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListLatestResponse {
+  repeated VideoInfo videos = 1;
+}
+
+message ListByAuthorIDsRequest {
+  repeated uint32 author_ids = 1;
+}
+
+message ListByAuthorIDsResponse {
+  repeated VideoInfo videos = 1;
+}
+
+message GetByIDsRequest {
+  repeated uint32 ids = 1;
+}
+
+message GetByIDsResponse {
+  repeated VideoInfo videos = 1;
+}
+
+message ListByPopularityRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListByPopularityResponse {
+  repeated VideoInfo videos = 1;
+}
+
+message BatchIsLikedRequest {
+  repeated uint32 video_ids = 1;
+  uint32 account_id = 2;
+}
+
+message BatchIsLikedResponse {
+  map<uint32, bool> liked = 1;  // video_id -> is_liked
+}
+
+message VideoInfo {
+  uint32 id = 1;
+  uint32 author_id = 2;
+  string username = 3;
+  string title = 4;
+  string description = 5;
+  string play_url = 6;
+  string cover_url = 7;
+  string created_at = 8;
+  int64 likes_count = 9;
+  int64 popularity = 10;
+  int64 play_count = 11;
+  int64 favorites_count = 12;
+}

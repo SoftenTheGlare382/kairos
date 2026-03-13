@@ -3,6 +3,8 @@
 **基础路径**：`/video`、`/comment`、`/like`  
 **端口**：8082（可通过 config 配置）
 
+**热度公式**：`popularity` = 点赞×20% + 评论×40% + 收藏×30% + 观看×10%（整数权重 2:4:3:1）
+
 ---
 
 ## 一、视频接口
@@ -55,6 +57,8 @@
 | created_at | string | 创建时间，ISO8601 |
 | likes_count | number | 点赞数 |
 | popularity | number | 热度值 |
+| play_count | number | 播放数 |
+| favorites_count | number | 收藏数 |
 
 **400 Bad Request**
 ```json
@@ -95,7 +99,9 @@
   "cover_url": "string",
   "created_at": "2026-03-11T10:00:00Z",
   "likes_count": 0,
-  "popularity": 0
+  "popularity": 0,
+  "play_count": 0,
+  "favorites_count": 0
 }
 ```
 
@@ -308,6 +314,81 @@
   "error": "unauthorized"
 }
 ```
+
+---
+
+### 7. 记录播放
+
+**POST** `/video/recordPlay`
+
+**需要鉴权**：`Authorization: Bearer <token>`
+
+前端在用户播放视频时调用，用于统计播放量与「谁播放了几次、最近播放时间」。
+
+### 请求体
+
+```json
+{
+  "video_id": 1
+}
+```
+
+### 响应
+
+**200 OK**
+```json
+{
+  "message": "play recorded"
+}
+```
+
+---
+
+### 8. 播放记录列表（仅作者可查）
+
+**POST** `/video/listPlayRecords`
+
+**需要鉴权**：`Authorization: Bearer <token>`
+
+仅视频作者可查询该视频的播放记录，包含谁播放了几次、最近播放时间。
+
+### 请求体
+
+```json
+{
+  "video_id": 1,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+### 响应
+
+**200 OK**
+```json
+[
+  {
+    "account_id": 2,
+    "username": "user2",
+    "play_count": 5,
+    "last_play_at": "2026-03-12T10:30:00Z"
+  }
+]
+```
+
+---
+
+### 9. 收藏 / 取消收藏 / 是否已收藏 / 我收藏的视频
+
+**POST** `/video/favorite` — 收藏
+
+**POST** `/video/unfavorite` — 取消收藏
+
+**POST** `/video/isFavorited` — 是否已收藏（未登录返回 false）
+
+**POST** `/video/listMyFavoritedVideos` — 我收藏的视频列表
+
+请求体与点赞接口类似，`video_id` 必填。响应格式与点赞接口类似。
 
 ---
 

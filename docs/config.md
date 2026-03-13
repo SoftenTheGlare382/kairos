@@ -44,6 +44,7 @@ func main() {
 | Redis.Port | int | Redis 端口 |
 | Redis.Password | string | Redis 密码 |
 | Redis.DB | int | Redis 库 |
+| RabbitMQ.URL | string | RabbitMQ 地址（amqp://user:pass@host:5672/），Worker 消费、Video/Social 发布 |
 
 ## 加载优先级
 

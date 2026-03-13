@@ -9,8 +9,10 @@ import (
 
 	"kairos/api/socialpb"
 	"kairos/pkg/config"
+	"kairos/pkg/events"
 	grpcpkg "kairos/pkg/grpc"
 	"kairos/pkg/middleware"
+	"kairos/pkg/rabbitmq"
 	"kairos/pkg/redis"
 	social "kairos/services/social/internal"
 
@@ -49,6 +51,18 @@ func main() {
 
 	socialRepo := social.NewSocialRepository(db)
 
+	// RabbitMQ（可选，用于发布 social 事件给 Worker）
+	var publisher *events.Publisher
+	if cfg.RabbitMQ.URL != "" {
+		if mq, err := rabbitmq.New(cfg.RabbitMQ.URL); err != nil {
+			log.Printf("rabbitmq connect failed (worker events disabled): %v", err)
+		} else {
+			defer mq.Close()
+			publisher = events.NewPublisher(mq)
+			log.Printf("rabbitmq connected, publishing social events")
+		}
+	}
+
 	grpcAddr := cfg.Social.AccountGrpcAddr
 	if grpcAddr == "" {
 		grpcAddr = cfg.Account.GrpcAddr
@@ -59,7 +73,7 @@ func main() {
 	}
 	defer accountCli.Close()
 
-	socialSvc := social.NewSocialService(socialRepo, accountCli)
+	socialSvc := social.NewSocialService(socialRepo, accountCli, publisher)
 	socialHandler := social.NewSocialHandler(socialSvc)
 
 	// 启动 gRPC 服务（供 Feed 调用 GetFollowingIDs）

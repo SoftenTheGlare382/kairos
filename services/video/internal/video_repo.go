@@ -39,6 +39,20 @@ func (r *VideoRepository) GetByID(ctx context.Context, id uint) (*Video, error) 
 	return &v, nil
 }
 
+// ListLatest 最新视频列表（按发布时间倒序，分页）
+func (r *VideoRepository) ListLatest(ctx context.Context, limit, offset int) ([]Video, error) {
+	var list []Video
+	err := r.db.WithContext(ctx).Order("create_at desc").Limit(limit).Offset(offset).Find(&list).Error
+	return list, err
+}
+
+// ListByPopularity 按热度排序视频列表（分页）
+func (r *VideoRepository) ListByPopularity(ctx context.Context, limit, offset int) ([]Video, error) {
+	var list []Video
+	err := r.db.WithContext(ctx).Order("popularity desc, create_at desc").Limit(limit).Offset(offset).Find(&list).Error
+	return list, err
+}
+
 // ListByAuthorID 按作者列表
 func (r *VideoRepository) ListByAuthorID(ctx context.Context, authorID uint) ([]Video, error) {
 	var list []Video
@@ -75,6 +89,13 @@ func (r *VideoRepository) IsExist(ctx context.Context, id uint) (bool, error) {
 	return n > 0, err
 }
 
+// ListAllIDs 列出所有未删除视频的 id（用于布隆过滤器回填）
+func (r *VideoRepository) ListAllIDs(ctx context.Context) ([]uint, error) {
+	var ids []uint
+	err := r.db.WithContext(ctx).Model(&Video{}).Pluck("id", &ids).Error
+	return ids, err
+}
+
 // UpdateLikesCount 更新点赞数
 func (r *VideoRepository) UpdateLikesCount(ctx context.Context, id uint, delta int64) error {
 	return r.updateLikesCount(ctx, r.db, id, delta)
@@ -92,6 +113,51 @@ func (r *VideoRepository) updateLikesCount(ctx context.Context, db *gorm.DB, id 
 
 // UpdatePopularity 更新热度
 func (r *VideoRepository) UpdatePopularity(ctx context.Context, id uint, delta int64) error {
-	return r.db.WithContext(ctx).Model(&Video{}).Where("id = ?", id).
+	return r.updatePopularity(ctx, r.db, id, delta)
+}
+
+// UpdatePopularityInTx 在事务内更新热度
+func (r *VideoRepository) UpdatePopularityInTx(ctx context.Context, tx *gorm.DB, id uint, delta int64) error {
+	return r.updatePopularity(ctx, tx, id, delta)
+}
+
+func (r *VideoRepository) updatePopularity(ctx context.Context, db *gorm.DB, id uint, delta int64) error {
+	return db.WithContext(ctx).Model(&Video{}).Where("id = ?", id).
 		UpdateColumn("popularity", gorm.Expr("GREATEST(popularity + ?, 0)", delta)).Error
+}
+
+// UpdatePlayCount 更新播放数
+func (r *VideoRepository) UpdatePlayCount(ctx context.Context, id uint, delta int64) error {
+	return r.updatePlayCount(ctx, r.db, id, delta)
+}
+
+// UpdatePlayCountInTx 在事务内更新播放数
+func (r *VideoRepository) UpdatePlayCountInTx(ctx context.Context, tx *gorm.DB, id uint, delta int64) error {
+	return r.updatePlayCount(ctx, tx, id, delta)
+}
+
+func (r *VideoRepository) updatePlayCount(ctx context.Context, db *gorm.DB, id uint, delta int64) error {
+	return db.WithContext(ctx).Model(&Video{}).Where("id = ?", id).
+		UpdateColumn("play_count", gorm.Expr("GREATEST(play_count + ?, 0)", delta)).Error
+}
+
+// UpdateFavoritesCount 更新收藏数
+func (r *VideoRepository) UpdateFavoritesCount(ctx context.Context, id uint, delta int64) error {
+	return r.updateFavoritesCount(ctx, r.db, id, delta)
+}
+
+// UpdateFavoritesCountInTx 在事务内更新收藏数
+func (r *VideoRepository) UpdateFavoritesCountInTx(ctx context.Context, tx *gorm.DB, id uint, delta int64) error {
+	return r.updateFavoritesCount(ctx, tx, id, delta)
+}
+
+func (r *VideoRepository) updateFavoritesCount(ctx context.Context, db *gorm.DB, id uint, delta int64) error {
+	return db.WithContext(ctx).Model(&Video{}).Where("id = ?", id).
+		UpdateColumn("favorites_count", gorm.Expr("GREATEST(favorites_count + ?, 0)", delta)).Error
+}
+
+// UpdateCommentCount 更新评论数
+func (r *VideoRepository) UpdateCommentCount(ctx context.Context, id uint, delta int64) error {
+	return r.db.WithContext(ctx).Model(&Video{}).Where("id = ?", id).
+		UpdateColumn("comment_count", gorm.Expr("GREATEST(comment_count + ?, 0)", delta)).Error
 }

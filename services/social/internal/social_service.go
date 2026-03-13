@@ -7,15 +7,21 @@ import (
 	"kairos/pkg/grpc"
 )
 
+// SocialPublisher 关注事件发布接口（可选，供 Worker 消费）
+type SocialPublisher interface {
+	PublishSocial(followerID, followingID uint, action string)
+}
+
 // SocialService 关注关系服务
 type SocialService struct {
 	repo       *SocialRepository
 	accountCli *grpc.AccountClient
+	publisher  SocialPublisher
 }
 
-// NewSocialService 创建
-func NewSocialService(repo *SocialRepository, accountCli *grpc.AccountClient) *SocialService {
-	return &SocialService{repo: repo, accountCli: accountCli}
+// NewSocialService 创建，publisher 可为 nil
+func NewSocialService(repo *SocialRepository, accountCli *grpc.AccountClient, publisher SocialPublisher) *SocialService {
+	return &SocialService{repo: repo, accountCli: accountCli, publisher: publisher}
 }
 
 // Follow 关注某用户
@@ -41,7 +47,13 @@ func (s *SocialService) Follow(ctx context.Context, followerID, followingID uint
 	if ok {
 		return errors.New("already following")
 	}
-	return s.repo.Create(ctx, &Follow{FollowerID: followerID, FollowingID: followingID})
+	if err := s.repo.Create(ctx, &Follow{FollowerID: followerID, FollowingID: followingID}); err != nil {
+		return err
+	}
+	if s.publisher != nil {
+		s.publisher.PublishSocial(followerID, followingID, "follow")
+	}
+	return nil
 }
 
 // Unfollow 取关某用户
@@ -55,6 +67,9 @@ func (s *SocialService) Unfollow(ctx context.Context, followerID, followingID ui
 	}
 	if !deleted {
 		return errors.New("not following")
+	}
+	if s.publisher != nil {
+		s.publisher.PublishSocial(followerID, followingID, "unfollow")
 	}
 	return nil
 }
