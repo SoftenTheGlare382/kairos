@@ -179,6 +179,31 @@ func (h *VideoHandler) ListByAuthorID(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
+// Search 模糊搜索视频（按标题/描述，公开）
+func (h *VideoHandler) Search(c *gin.Context) {
+	var req struct {
+		Query  string `json:"query"`
+		Limit  int    `json:"limit"`
+		Offset int    `json:"offset"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Limit <= 0 {
+		req.Limit = 20
+	}
+	list, total, err := h.videoSvc.Search(c.Request.Context(), req.Query, req.Limit, req.Offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"list":  list,
+		"total": total,
+	})
+}
+
 // GetDetail 视频详情（公开）
 func (h *VideoHandler) GetDetail(c *gin.Context) {
 	var req struct {

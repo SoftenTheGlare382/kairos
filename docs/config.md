@@ -30,6 +30,9 @@ func main() {
 | Social.AccountGrpcAddr | string | Social 调用 Account gRPC 的地址 |
 | Server.SocialPort | int | Social HTTP 端口 |
 | Server.SocialGrpcPort | int | Social gRPC 端口（Feed 调用） |
+| Video.Meilisearch.Host | string | Meilisearch 地址，如 http://127.0.0.1:7700，留空禁用搜索 |
+| Video.Meilisearch.APIKey | string | Meilisearch API Key（可选） |
+| Video.Meilisearch.Index | string | 搜索索引名，默认 videos |
 | Video.Storage.Type | string | 存储类型：local、qiniu |
 | Video.Storage.Local.UploadDir | string | 本地存储目录 |
 | Video.Storage.Local.StaticPrefix | string | 本地静态 URL 前缀 |
@@ -45,6 +48,12 @@ func main() {
 | Redis.Password | string | Redis 密码 |
 | Redis.DB | int | Redis 库 |
 | RabbitMQ.URL | string | RabbitMQ 地址（amqp://user:pass@host:5672/），Worker 消费、Video/Social 发布 |
+| Server.IMPort | int | IM 服务端口（默认 8085） |
+| IM.AccountGrpcAddr | string | IM 调用 Account gRPC 的地址 |
+| IM.SocialGrpcAddr | string | IM 调用 Social gRPC 的地址（校验互关） |
+| IM.Meilisearch.Host | string | Meilisearch 地址（与 Video 共用，留空禁用消息搜索） |
+| IM.Meilisearch.Index | string | 消息索引名，默认 im_messages |
+| IM.MeilisearchSyncInterval | int | MySQL→Meilisearch 全量同步间隔（分钟），0=仅启动时，默认 5 |
 
 ## 加载优先级
 

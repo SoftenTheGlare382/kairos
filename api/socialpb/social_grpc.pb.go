@@ -20,16 +20,19 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	SocialService_GetFollowingIDs_FullMethodName = "/social.SocialService/GetFollowingIDs"
+	SocialService_IsMutualFollow_FullMethodName  = "/social.SocialService/IsMutualFollow"
 )
 
 // SocialServiceClient is the client API for SocialService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Social 服务（供 Feed 等下游服务 RPC 调用）
+// Social 服务（供 Feed、IM 等下游服务 RPC 调用）
 type SocialServiceClient interface {
 	// GetFollowingIDs 获取某用户关注的用户 ID 列表
 	GetFollowingIDs(ctx context.Context, in *GetFollowingIDsRequest, opts ...grpc.CallOption) (*GetFollowingIDsResponse, error)
+	// IsMutualFollow 是否互相关注（供 IM 校验私聊权限）
+	IsMutualFollow(ctx context.Context, in *IsMutualFollowRequest, opts ...grpc.CallOption) (*IsMutualFollowResponse, error)
 }
 
 type socialServiceClient struct {
@@ -50,14 +53,26 @@ func (c *socialServiceClient) GetFollowingIDs(ctx context.Context, in *GetFollow
 	return out, nil
 }
 
+func (c *socialServiceClient) IsMutualFollow(ctx context.Context, in *IsMutualFollowRequest, opts ...grpc.CallOption) (*IsMutualFollowResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IsMutualFollowResponse)
+	err := c.cc.Invoke(ctx, SocialService_IsMutualFollow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SocialServiceServer is the server API for SocialService service.
 // All implementations must embed UnimplementedSocialServiceServer
 // for forward compatibility.
 //
-// Social 服务（供 Feed 等下游服务 RPC 调用）
+// Social 服务（供 Feed、IM 等下游服务 RPC 调用）
 type SocialServiceServer interface {
 	// GetFollowingIDs 获取某用户关注的用户 ID 列表
 	GetFollowingIDs(context.Context, *GetFollowingIDsRequest) (*GetFollowingIDsResponse, error)
+	// IsMutualFollow 是否互相关注（供 IM 校验私聊权限）
+	IsMutualFollow(context.Context, *IsMutualFollowRequest) (*IsMutualFollowResponse, error)
 	mustEmbedUnimplementedSocialServiceServer()
 }
 
@@ -70,6 +85,9 @@ type UnimplementedSocialServiceServer struct{}
 
 func (UnimplementedSocialServiceServer) GetFollowingIDs(context.Context, *GetFollowingIDsRequest) (*GetFollowingIDsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetFollowingIDs not implemented")
+}
+func (UnimplementedSocialServiceServer) IsMutualFollow(context.Context, *IsMutualFollowRequest) (*IsMutualFollowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method IsMutualFollow not implemented")
 }
 func (UnimplementedSocialServiceServer) mustEmbedUnimplementedSocialServiceServer() {}
 func (UnimplementedSocialServiceServer) testEmbeddedByValue()                       {}
@@ -110,6 +128,24 @@ func _SocialService_GetFollowingIDs_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SocialService_IsMutualFollow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IsMutualFollowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SocialServiceServer).IsMutualFollow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SocialService_IsMutualFollow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SocialServiceServer).IsMutualFollow(ctx, req.(*IsMutualFollowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SocialService_ServiceDesc is the grpc.ServiceDesc for SocialService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -120,6 +156,10 @@ var SocialService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetFollowingIDs",
 			Handler:    _SocialService_GetFollowingIDs_Handler,
+		},
+		{
+			MethodName: "IsMutualFollow",
+			Handler:    _SocialService_IsMutualFollow_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

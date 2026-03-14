@@ -63,11 +63,41 @@ func (c *Client) ensureQueue(name string) error {
 	return err
 }
 
-// Publish 发布消息到指定队列
+// EnsureQueueWithDLQ 声明带死信队列的主队列（幂等），需先声明 dlq 队列
+func (c *Client) EnsureQueueWithDLQ(queue, dlq string) error {
+	c.mu.RLock()
+	ch := c.channel
+	c.mu.RUnlock()
+	if ch == nil {
+		return fmt.Errorf("channel closed")
+	}
+	if _, err := ch.QueueDeclare(dlq, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("declare dlq %s: %w", dlq, err)
+	}
+	args := amqp.Table{
+		"x-dead-letter-exchange":    "",
+		"x-dead-letter-routing-key": dlq,
+	}
+	if _, err := ch.QueueDeclare(queue, true, false, false, false, args); err != nil {
+		return fmt.Errorf("declare queue %s: %w", queue, err)
+	}
+	return nil
+}
+
+// Publish 发布消息到指定队列（会声明队列，无特殊参数）
 func (c *Client) Publish(queue string, body interface{}) error {
 	if err := c.ensureQueue(queue); err != nil {
 		return err
 	}
+	return c.publishToQueue(queue, body)
+}
+
+// PublishToQueue 直接发布到队列，不声明（用于已用 EnsureQueueWithDLQ 等预先声明的队列）
+func (c *Client) PublishToQueue(queue string, body interface{}) error {
+	return c.publishToQueue(queue, body)
+}
+
+func (c *Client) publishToQueue(queue string, body interface{}) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -79,8 +109,9 @@ func (c *Client) Publish(queue string, body interface{}) error {
 		return fmt.Errorf("channel closed")
 	}
 	return ch.PublishWithContext(nil, "", queue, false, false, amqp.Publishing{
-		ContentType: "application/json",
-		Body:        data,
+		ContentType:  "application/json",
+		Body:         data,
+		DeliveryMode: amqp.Persistent,
 	})
 }
 
@@ -105,6 +136,32 @@ func (c *Client) Consume(queue string, handler func(body []byte) error) error {
 	for d := range deliveries {
 		if err := handler(d.Body); err != nil {
 			_ = d.Nack(false, true)
+			continue
+		}
+		_ = d.Ack(false)
+	}
+	return nil
+}
+
+// ConsumeWithDelivery 消费队列，handler 可控制 Nack 是否 requeue；返回 (nil, false) 表示 Ack，返回 (err, true) 表示 Nack(requeue)，返回 (err, false) 表示 Nack(requeue=false) 进死信队列
+func (c *Client) ConsumeWithDelivery(queue string, handler func(d *amqp.Delivery) (err error, requeue bool)) error {
+	c.mu.RLock()
+	ch := c.channel
+	c.mu.RUnlock()
+	if ch == nil {
+		return fmt.Errorf("channel closed")
+	}
+	if err := ch.Qos(1, 0, false); err != nil {
+		return err
+	}
+	deliveries, err := ch.Consume(queue, "", false, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+	for d := range deliveries {
+		err, requeue := handler(&d)
+		if err != nil {
+			_ = d.Nack(false, requeue)
 			continue
 		}
 		_ = d.Ack(false)

@@ -115,7 +115,21 @@ func main() {
 	// 定时重建布隆过滤器，清除已删除视频
 	go runVideoBloomRebuild(videoRepo, videoBloom, 6*time.Hour)
 
-	videoSvc := video.NewVideoService(videoRepo, storage, rdb, videoBloom)
+	// Meilisearch 搜索（可选）
+	var searchClient video.SearchClient
+	if cfg.Video.Meilisearch.Host != "" {
+		ms := video.NewMeilisearchClient(
+			cfg.Video.Meilisearch.Host,
+			cfg.Video.Meilisearch.APIKey,
+			cfg.Video.Meilisearch.Index,
+		)
+		_ = ms.EnsureIndex(context.Background())
+		seedVideoSearchIndex(context.Background(), ms, videoRepo)
+		searchClient = ms
+		log.Printf("meilisearch connected (host=%s, index=%s)", cfg.Video.Meilisearch.Host, cfg.Video.Meilisearch.Index)
+	}
+
+	videoSvc := video.NewVideoService(videoRepo, storage, rdb, videoBloom, searchClient)
 	likeSvc := video.NewLikeService(db, likeRepo, videoRepo, publisher, rdb)
 	commentSvc := video.NewCommentService(commentRepo, videoRepo, publisher, rdb, videoBloom)
 	playSvc := video.NewPlayService(db, playRecordRepo, videoRepo, publisher, publisher)
@@ -169,6 +183,7 @@ func main() {
 	{
 		videoGroup.POST("/listByAuthorID", videoHandler.ListByAuthorID)
 		videoGroup.POST("/getDetail", videoHandler.GetDetail)
+		videoGroup.POST("/search", videoHandler.Search)
 	}
 	commentGroup := r.Group("/comment")
 	{
@@ -208,6 +223,19 @@ func main() {
 	log.Printf("Video service listening on %s", addr)
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("serve: %v", err)
+	}
+}
+
+func seedVideoSearchIndex(ctx context.Context, searchClient video.SearchClient, repo *video.VideoRepository) {
+	list, err := repo.ListAllForSearch(ctx)
+	if err != nil {
+		return
+	}
+	for _, v := range list {
+		_ = searchClient.IndexVideo(ctx, &v)
+	}
+	if len(list) > 0 {
+		log.Printf("meilisearch seed: indexed %d videos", len(list))
 	}
 }
 

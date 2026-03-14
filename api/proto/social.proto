@@ -4,10 +4,12 @@ package social;
 
 option go_package = "kairos/api/socialpb";
 
-// Social 服务（供 Feed 等下游服务 RPC 调用）
+// Social 服务（供 Feed、IM 等下游服务 RPC 调用）
 service SocialService {
   // GetFollowingIDs 获取某用户关注的用户 ID 列表
   rpc GetFollowingIDs(GetFollowingIDsRequest) returns (GetFollowingIDsResponse);
+  // IsMutualFollow 是否互相关注（供 IM 校验私聊权限）
+  rpc IsMutualFollow(IsMutualFollowRequest) returns (IsMutualFollowResponse);
 }
 
 message GetFollowingIDsRequest {
@@ -16,4 +18,13 @@ message GetFollowingIDsRequest {
 
 message GetFollowingIDsResponse {
   repeated uint32 following_ids = 1;
+}
+
+message IsMutualFollowRequest {
+  uint32 user_a = 1;
+  uint32 user_b = 2;
+}
+
+message IsMutualFollowResponse {
+  bool mutual = 1;
 }

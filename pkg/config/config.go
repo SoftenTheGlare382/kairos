@@ -22,6 +22,7 @@ type Config struct {
 	Video    VideoConfig    `yaml:"video"`
 	Social   SocialConfig   `yaml:"social"`
 	Feed     FeedConfig     `yaml:"feed"`
+	IM       IMConfig       `yaml:"im"`
 	Qiniu    QiniuConfig    `yaml:"qiniu"`
 	RabbitMQ RabbitMQConfig `yaml:"rabbitmq"`
 	Worker   WorkerConfig   `yaml:"worker"`
@@ -48,10 +49,26 @@ type FeedConfig struct {
 	SocialGrpcAddr string `yaml:"social_grpc_addr"` // Social gRPC 地址
 }
 
+// IMConfig IM 服务配置（依赖 Account、Social gRPC）
+type IMConfig struct {
+	AccountGrpcAddr         string            `yaml:"account_grpc_addr"`          // Account gRPC 地址
+	SocialGrpcAddr          string            `yaml:"social_grpc_addr"`           // Social gRPC 地址（校验互关）
+	Meilisearch             MeilisearchConfig `yaml:"meilisearch"`                // Meilisearch 消息搜索（可选）
+	MeilisearchSyncInterval int               `yaml:"meilisearch_sync_interval"`   // MySQL→Meilisearch 全量同步间隔（分钟），0=仅启动时同步
+}
+
 // VideoConfig Video 服务配置（含 RPC 调用 Account 的地址、存储类型等）
 type VideoConfig struct {
-	AccountGrpcAddr string        `yaml:"account_grpc_addr"` // Account gRPC 地址（Video 调用）
-	Storage         StorageConfig `yaml:"storage"`           // 存储配置（本地 / 七牛云）
+	AccountGrpcAddr string           `yaml:"account_grpc_addr"` // Account gRPC 地址（Video 调用）
+	Storage         StorageConfig    `yaml:"storage"`           // 存储配置（本地 / 七牛云）
+	Meilisearch     MeilisearchConfig `yaml:"meilisearch"`       // Meilisearch 搜索（可选）
+}
+
+// MeilisearchConfig Meilisearch 配置
+type MeilisearchConfig struct {
+	Host    string `yaml:"host"`    // 如 http://127.0.0.1:7700
+	APIKey  string `yaml:"api_key"` // 可选，无鉴权时留空
+	Index   string `yaml:"index"`   // 索引名，默认 videos
 }
 
 // StorageConfig 存储配置，用于动态切换 local / qiniu
@@ -96,6 +113,7 @@ type ServerConfig struct {
 	SocialPort      int    `yaml:"social_port"`       // Social HTTP 端口
 	SocialGrpcPort  int    `yaml:"social_grpc_port"`  // Social gRPC 端口（Feed 调用）
 	FeedPort        int    `yaml:"feed_port"`         // Feed HTTP 端口
+	IMPort          int    `yaml:"im_port"`           // IM HTTP/WebSocket 端口
 	GinMode         string `yaml:"gin_mode"`          // debug | release | test
 }
 
@@ -235,6 +253,7 @@ func LoadFromEnv() Config {
 			SocialPort:      getEnvInt("SOCIAL_SERVER_PORT", 8083),
 			SocialGrpcPort:  getEnvInt("SOCIAL_GRPC_PORT", 9083),
 			FeedPort:        getEnvInt("FEED_SERVER_PORT", 8084),
+			IMPort:          getEnvInt("IM_SERVER_PORT", 8085),
 			GinMode:         getEnv("GIN_MODE", "debug"),
 		},
 		Jwt: JwtConfig{
@@ -265,8 +284,23 @@ func LoadFromEnv() Config {
 			VideoGrpcAddr:  getEnv("FEED_VIDEO_GRPC_ADDR", "127.0.0.1:9082"),
 			SocialGrpcAddr: getEnv("FEED_SOCIAL_GRPC_ADDR", "127.0.0.1:9083"),
 		},
+		IM: IMConfig{
+			AccountGrpcAddr:         getEnv("IM_ACCOUNT_GRPC_ADDR", getEnv("ACCOUNT_GRPC_ADDR", "127.0.0.1:9081")),
+			SocialGrpcAddr:          getEnv("IM_SOCIAL_GRPC_ADDR", "127.0.0.1:9083"),
+			MeilisearchSyncInterval: getEnvInt("IM_MEILISEARCH_SYNC_INTERVAL", 5),
+			Meilisearch: MeilisearchConfig{
+				Host:   getEnv("MEILISEARCH_HOST", ""),
+				APIKey: getEnv("MEILISEARCH_API_KEY", ""),
+				Index:  getEnv("IM_MEILISEARCH_INDEX", "im_messages"),
+			},
+		},
 		Video: VideoConfig{
 			AccountGrpcAddr: getEnv("VIDEO_ACCOUNT_GRPC_ADDR", getEnv("ACCOUNT_GRPC_ADDR", "127.0.0.1:9081")),
+			Meilisearch: MeilisearchConfig{
+				Host:   getEnv("MEILISEARCH_HOST", ""), // 留空禁用搜索
+				APIKey: getEnv("MEILISEARCH_API_KEY", ""),
+				Index:  getEnv("MEILISEARCH_INDEX", "videos"),
+			},
 			Storage: StorageConfig{
 				Type: getEnv("VIDEO_STORAGE_TYPE", "local"),
 				Local: LocalStorageConfig{

@@ -96,6 +96,13 @@ func (r *VideoRepository) ListAllIDs(ctx context.Context) ([]uint, error) {
 	return ids, err
 }
 
+// ListAllForSearch 列出所有视频的 id、title、description（用于 Meilisearch 初始同步）
+func (r *VideoRepository) ListAllForSearch(ctx context.Context) ([]Video, error) {
+	var list []Video
+	err := r.db.WithContext(ctx).Model(&Video{}).Select("id", "title", "description").Find(&list).Error
+	return list, err
+}
+
 // UpdateLikesCount 更新点赞数
 func (r *VideoRepository) UpdateLikesCount(ctx context.Context, id uint, delta int64) error {
 	return r.updateLikesCount(ctx, r.db, id, delta)

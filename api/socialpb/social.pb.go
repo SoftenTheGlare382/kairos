@@ -109,6 +109,102 @@ func (x *GetFollowingIDsResponse) GetFollowingIds() []uint32 {
 	return nil
 }
 
+type IsMutualFollowRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserA         uint32                 `protobuf:"varint,1,opt,name=user_a,json=userA,proto3" json:"user_a,omitempty"`
+	UserB         uint32                 `protobuf:"varint,2,opt,name=user_b,json=userB,proto3" json:"user_b,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IsMutualFollowRequest) Reset() {
+	*x = IsMutualFollowRequest{}
+	mi := &file_social_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IsMutualFollowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IsMutualFollowRequest) ProtoMessage() {}
+
+func (x *IsMutualFollowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_social_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IsMutualFollowRequest.ProtoReflect.Descriptor instead.
+func (*IsMutualFollowRequest) Descriptor() ([]byte, []int) {
+	return file_social_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *IsMutualFollowRequest) GetUserA() uint32 {
+	if x != nil {
+		return x.UserA
+	}
+	return 0
+}
+
+func (x *IsMutualFollowRequest) GetUserB() uint32 {
+	if x != nil {
+		return x.UserB
+	}
+	return 0
+}
+
+type IsMutualFollowResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mutual        bool                   `protobuf:"varint,1,opt,name=mutual,proto3" json:"mutual,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IsMutualFollowResponse) Reset() {
+	*x = IsMutualFollowResponse{}
+	mi := &file_social_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IsMutualFollowResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IsMutualFollowResponse) ProtoMessage() {}
+
+func (x *IsMutualFollowResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_social_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IsMutualFollowResponse.ProtoReflect.Descriptor instead.
+func (*IsMutualFollowResponse) Descriptor() ([]byte, []int) {
+	return file_social_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *IsMutualFollowResponse) GetMutual() bool {
+	if x != nil {
+		return x.Mutual
+	}
+	return false
+}
+
 var File_social_proto protoreflect.FileDescriptor
 
 const file_social_proto_rawDesc = "" +
@@ -118,9 +214,15 @@ const file_social_proto_rawDesc = "" +
 	"\vfollower_id\x18\x01 \x01(\rR\n" +
 	"followerId\">\n" +
 	"\x17GetFollowingIDsResponse\x12#\n" +
-	"\rfollowing_ids\x18\x01 \x03(\rR\ffollowingIds2c\n" +
+	"\rfollowing_ids\x18\x01 \x03(\rR\ffollowingIds\"E\n" +
+	"\x15IsMutualFollowRequest\x12\x15\n" +
+	"\x06user_a\x18\x01 \x01(\rR\x05userA\x12\x15\n" +
+	"\x06user_b\x18\x02 \x01(\rR\x05userB\"0\n" +
+	"\x16IsMutualFollowResponse\x12\x16\n" +
+	"\x06mutual\x18\x01 \x01(\bR\x06mutual2\xb4\x01\n" +
 	"\rSocialService\x12R\n" +
-	"\x0fGetFollowingIDs\x12\x1e.social.GetFollowingIDsRequest\x1a\x1f.social.GetFollowingIDsResponseB\x15Z\x13kairos/api/socialpbb\x06proto3"
+	"\x0fGetFollowingIDs\x12\x1e.social.GetFollowingIDsRequest\x1a\x1f.social.GetFollowingIDsResponse\x12O\n" +
+	"\x0eIsMutualFollow\x12\x1d.social.IsMutualFollowRequest\x1a\x1e.social.IsMutualFollowResponseB\x15Z\x13kairos/api/socialpbb\x06proto3"
 
 var (
 	file_social_proto_rawDescOnce sync.Once
@@ -134,16 +236,20 @@ func file_social_proto_rawDescGZIP() []byte {
 	return file_social_proto_rawDescData
 }
 
-var file_social_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_social_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_social_proto_goTypes = []any{
 	(*GetFollowingIDsRequest)(nil),  // 0: social.GetFollowingIDsRequest
 	(*GetFollowingIDsResponse)(nil), // 1: social.GetFollowingIDsResponse
+	(*IsMutualFollowRequest)(nil),   // 2: social.IsMutualFollowRequest
+	(*IsMutualFollowResponse)(nil),  // 3: social.IsMutualFollowResponse
 }
 var file_social_proto_depIdxs = []int32{
 	0, // 0: social.SocialService.GetFollowingIDs:input_type -> social.GetFollowingIDsRequest
-	1, // 1: social.SocialService.GetFollowingIDs:output_type -> social.GetFollowingIDsResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	2, // 1: social.SocialService.IsMutualFollow:input_type -> social.IsMutualFollowRequest
+	1, // 2: social.SocialService.GetFollowingIDs:output_type -> social.GetFollowingIDsResponse
+	3, // 3: social.SocialService.IsMutualFollow:output_type -> social.IsMutualFollowResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -160,7 +266,7 @@ func file_social_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_social_proto_rawDesc), len(file_social_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

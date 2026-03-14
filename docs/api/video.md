@@ -69,7 +69,56 @@
 
 ---
 
-### 2. 视频详情（公开）
+### 2. 模糊搜索视频（公开，需配置 Meilisearch）
+
+**POST** `/video/search`
+
+按标题、描述进行模糊搜索，支持 typo 纠错。
+
+#### 请求体
+
+```json
+{
+  "query": "美食",
+  "limit": 20,
+  "offset": 0
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| query | string | 是 | 搜索关键词 |
+| limit | number | 否 | 每页数量，默认 20，最大 100 |
+| offset | number | 否 | 偏移量，默认 0 |
+
+#### 响应
+
+**200 OK**
+```json
+{
+  "list": [
+    {
+      "id": 1,
+      "author_id": 1,
+      "username": "string",
+      "title": "string",
+      "description": "string",
+      "play_url": "string",
+      "cover_url": "string",
+      "created_at": "2026-03-11T10:00:00Z",
+      "likes_count": 0,
+      "popularity": 0
+    }
+  ],
+  "total": 42
+}
+```
+
+未配置 Meilisearch（`MEILISEARCH_HOST` 为空）时返回空列表。
+
+---
+
+### 3. 视频详情（公开）
 
 **POST** `/video/getDetail`
 

@@ -38,3 +38,15 @@ func (s *grpcSocialServer) GetFollowingIDs(ctx context.Context, req *socialpb.Ge
 	}
 	return &socialpb.GetFollowingIDsResponse{FollowingIds: followingIds}, nil
 }
+
+// IsMutualFollow 是否互相关注（供 IM 校验私聊权限）
+func (s *grpcSocialServer) IsMutualFollow(ctx context.Context, req *socialpb.IsMutualFollowRequest) (*socialpb.IsMutualFollowResponse, error) {
+	if req == nil || req.UserA == 0 || req.UserB == 0 {
+		return &socialpb.IsMutualFollowResponse{Mutual: false}, nil
+	}
+	mutual, err := s.repo.IsMutualFollow(ctx, uint(req.UserA), uint(req.UserB))
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &socialpb.IsMutualFollowResponse{Mutual: mutual}, nil
+}

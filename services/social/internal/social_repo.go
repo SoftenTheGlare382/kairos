@@ -100,3 +100,13 @@ func (r *SocialRepository) ListFollowingIDsAll(ctx context.Context, userID uint)
 	}
 	return ids, nil
 }
+
+// IsMutualFollow 是否互相关注（A 关注 B 且 B 关注 A）
+func (r *SocialRepository) IsMutualFollow(ctx context.Context, userA, userB uint) (bool, error) {
+	ab, err := r.IsFollowing(ctx, userA, userB)
+	if err != nil || !ab {
+		return false, err
+	}
+	ba, err := r.IsFollowing(ctx, userB, userA)
+	return ba, err
+}

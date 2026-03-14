@@ -20,15 +20,16 @@ func videoDetailKey(id uint) string { return fmt.Sprintf("video:detail:%d", id) 
 
 // VideoService 视频服务
 type VideoService struct {
-	repo    *VideoRepository
-	storage Storage
-	rdb     *redis.Client      // 可选，GetDetail 缓存、Delete 时失效
-	bloom   *bloomfilter.Filter // 可选，防缓存穿透
+	repo         *VideoRepository
+	storage      Storage
+	rdb          *redis.Client      // 可选，GetDetail 缓存、Delete 时失效
+	bloom        *bloomfilter.Filter // 可选，防缓存穿透
+	searchClient SearchClient       // 可选，Meilisearch 模糊搜索
 }
 
 // NewVideoService 创建
-func NewVideoService(repo *VideoRepository, storage Storage, rdb *redis.Client, bloom *bloomfilter.Filter) *VideoService {
-	return &VideoService{repo: repo, storage: storage, rdb: rdb, bloom: bloom}
+func NewVideoService(repo *VideoRepository, storage Storage, rdb *redis.Client, bloom *bloomfilter.Filter, searchClient SearchClient) *VideoService {
+	return &VideoService{repo: repo, storage: storage, rdb: rdb, bloom: bloom, searchClient: searchClient}
 }
 
 // Publish 发布视频
@@ -54,6 +55,9 @@ func (s *VideoService) Publish(ctx context.Context, v *Video) error {
 	if s.bloom != nil {
 		s.bloom.Add("video:" + strconv.FormatUint(uint64(v.ID), 10))
 	}
+	if s.searchClient != nil {
+		_ = s.searchClient.IndexVideo(ctx, v)
+	}
 	if s.rdb != nil {
 		s.rdb.Del(ctx, "feed:latest:ids")
 	}
@@ -74,6 +78,9 @@ func (s *VideoService) Delete(ctx context.Context, id uint, authorID uint) error
 	}
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
+	}
+	if s.searchClient != nil {
+		_ = s.searchClient.DeleteVideo(ctx, id)
 	}
 	if s.rdb != nil {
 		s.rdb.Del(ctx, videoDetailKey(id))
@@ -134,4 +141,35 @@ func (s *VideoService) UpdateLikesCount(ctx context.Context, id uint, delta int6
 // UpdatePopularity 更新热度
 func (s *VideoService) UpdatePopularity(ctx context.Context, id uint, delta int64) error {
 	return s.repo.UpdatePopularity(ctx, id, delta)
+}
+
+// Search 按标题/描述模糊搜索视频（依赖 Meilisearch）
+func (s *VideoService) Search(ctx context.Context, query string, limit, offset int) ([]Video, int64, error) {
+	if s.searchClient == nil {
+		return nil, 0, nil
+	}
+	ids, total, err := s.searchClient.Search(ctx, query, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(ids) == 0 {
+		return []Video{}, total, nil
+	}
+	list, err := s.repo.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	// 保持 Meilisearch 返回的排序
+	idOrder := make(map[uint]int)
+	for i, id := range ids {
+		idOrder[id] = i
+	}
+	// 按 ids 顺序排列
+	sorted := make([]Video, len(list))
+	for _, v := range list {
+		if idx, ok := idOrder[v.ID]; ok {
+			sorted[idx] = v
+		}
+	}
+	return sorted, total, nil
 }
