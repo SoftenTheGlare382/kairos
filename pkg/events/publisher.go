@@ -2,6 +2,8 @@ package events
 
 import (
 	"kairos/pkg/rabbitmq"
+
+	"github.com/google/uuid"
 )
 
 // Publisher 事件发布者（Video、Social 使用，可选）
@@ -19,7 +21,7 @@ func (p *Publisher) PublishLike(videoID, accountID uint, delta int64) {
 	if p == nil || p.mq == nil {
 		return
 	}
-	_ = p.mq.Publish(QueueLike, LikeEvent{VideoID: videoID, AccountID: accountID, Delta: delta})
+	_ = p.mq.Publish(QueueLike, LikeEvent{EventID: uuid.NewString(), VideoID: videoID, AccountID: accountID, Delta: delta})
 }
 
 // PublishComment 发布评论事件
@@ -27,7 +29,7 @@ func (p *Publisher) PublishComment(videoID uint, delta int64) {
 	if p == nil || p.mq == nil {
 		return
 	}
-	_ = p.mq.Publish(QueueComment, CommentEvent{VideoID: videoID, Delta: delta})
+	_ = p.mq.Publish(QueueComment, CommentEvent{EventID: uuid.NewString(), VideoID: videoID, Delta: delta})
 }
 
 // PublishPopularity 发布热度事件
@@ -35,7 +37,7 @@ func (p *Publisher) PublishPopularity(videoID uint, delta int64) {
 	if p == nil || p.mq == nil {
 		return
 	}
-	_ = p.mq.Publish(QueuePopularity, PopularityEvent{VideoID: videoID, Delta: delta})
+	_ = p.mq.Publish(QueuePopularity, PopularityEvent{EventID: uuid.NewString(), VideoID: videoID, Delta: delta})
 }
 
 // PublishSocial 发布关注事件
@@ -43,7 +45,7 @@ func (p *Publisher) PublishSocial(followerID, followingID uint, action string) {
 	if p == nil || p.mq == nil {
 		return
 	}
-	_ = p.mq.Publish(QueueSocial, SocialEvent{FollowerID: followerID, FollowingID: followingID, Action: action})
+	_ = p.mq.Publish(QueueSocial, SocialEvent{EventID: uuid.NewString(), FollowerID: followerID, FollowingID: followingID, Action: action})
 }
 
 // PublishPlay 发布播放事件（Worker 异步写入 play_records 并更新 play_count/popularity）
@@ -51,5 +53,13 @@ func (p *Publisher) PublishPlay(accountID, videoID uint) {
 	if p == nil || p.mq == nil {
 		return
 	}
-	_ = p.mq.Publish(QueuePlay, PlayEvent{AccountID: accountID, VideoID: videoID})
+	_ = p.mq.Publish(QueuePlay, PlayEvent{EventID: uuid.NewString(), AccountID: accountID, VideoID: videoID})
+}
+
+// PublishCommentAudit 发布评论审核事件
+func (p *Publisher) PublishCommentAudit(commentID, videoID, authorID uint, content string) {
+	if p == nil || p.mq == nil {
+		return
+	}
+	_ = p.mq.Publish(QueueCommentAudit, CommentAuditEvent{EventID: uuid.NewString(), CommentID: commentID, VideoID: videoID, AuthorID: authorID, Content: content})
 }

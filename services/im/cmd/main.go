@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"kairos/pkg/middleware"
 	"kairos/pkg/rabbitmq"
 	"kairos/pkg/redis"
+	"kairos/pkg/registry"
 	im "kairos/services/im/internal"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +28,30 @@ import (
 func main() {
 	config.LoadEnvFromSearchPaths(true)
 	cfg := config.Load()
+
+	// etcd 注册（可选）
+	var reg *registry.EtcdRegistry
+	var regCancel context.CancelFunc
+	if len(cfg.Etcd.Endpoints) > 0 {
+		r, err := registry.NewEtcd(registry.Config{Endpoints: cfg.Etcd.Endpoints, Prefix: cfg.Etcd.Prefix, TTL: cfg.Etcd.TTL})
+		if err != nil {
+			log.Printf("im: etcd disabled: %v", err)
+		} else {
+			reg = r
+			instanceID := "im-" + strconv.Itoa(os.Getpid())
+			httpPort := cfg.Server.IMPort
+			if httpPort == 0 {
+				httpPort = 8085
+			}
+			regCancel, _ = reg.Register(context.Background(), "im", registry.ServiceHTTP, instanceID, fmt.Sprintf("127.0.0.1:%d", httpPort))
+		}
+	}
+	defer func() {
+		if regCancel != nil {
+			regCancel()
+		}
+		_ = reg.Close()
+	}()
 
 	db, err := openDB(cfg.Database)
 	if err != nil {

@@ -14,8 +14,10 @@ import (
 
 	"kairos/pkg/config"
 	"kairos/pkg/events"
+	"kairos/pkg/moderation"
 	"kairos/pkg/rabbitmq"
 	"kairos/pkg/redis"
+	"kairos/pkg/registry"
 
 	redislib "github.com/redis/go-redis/v9"
 	"gorm.io/driver/mysql"
@@ -28,9 +30,42 @@ const (
 	RedisKeyHot      = "feed:hot"       // video_id -> popularity
 )
 
+func commentListKey(videoID uint) string {
+	return fmt.Sprintf("comment:list:%d", videoID)
+}
+
+// ProcessedEvent MQ 幂等表：用于保证 at-least-once 投递不重复执行副作用
+type ProcessedEvent struct {
+	EventID   string    `gorm:"primaryKey;size:64;column:event_id"`
+	EventType string    `gorm:"size:32;index;column:event_type"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (ProcessedEvent) TableName() string { return "processed_events" }
+
 func main() {
 	config.LoadEnvFromSearchPaths(true)
 	cfg := config.Load()
+
+	// etcd 注册（可选）：worker 仅注册用于观测/运维（无对外 HTTP）
+	var reg *registry.EtcdRegistry
+	var regCancel context.CancelFunc
+	if len(cfg.Etcd.Endpoints) > 0 {
+		r, err := registry.NewEtcd(registry.Config{Endpoints: cfg.Etcd.Endpoints, Prefix: cfg.Etcd.Prefix, TTL: cfg.Etcd.TTL})
+		if err != nil {
+			log.Printf("worker: etcd disabled: %v", err)
+		} else {
+			reg = r
+			instanceID := fmt.Sprintf("worker-%d", os.Getpid())
+			regCancel, _ = reg.Register(context.Background(), "worker", registry.ServiceHTTP, instanceID, "worker")
+		}
+	}
+	defer func() {
+		if regCancel != nil {
+			regCancel()
+		}
+		_ = reg.Close()
+	}()
 
 	if cfg.RabbitMQ.URL == "" {
 		log.Fatalf("RABBITMQ_URL is required for worker")
@@ -59,6 +94,22 @@ func main() {
 	}
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
+
+	// 幂等表：自动建表（与 video/account 共用 DB）
+	if err := db.AutoMigrate(&ProcessedEvent{}); err != nil {
+		log.Printf("worker: auto migrate processed_events failed: %v", err)
+	}
+
+	// Ark 大模型审核（可选：没配置 key 则禁用）
+	var arkCli *moderation.ArkClient
+	if cfg.Ark.APIKey != "" {
+		if c, err := moderation.NewArkClient(moderation.ArkConfig{APIKey: cfg.Ark.APIKey, BaseURL: cfg.Ark.BaseURL, Model: cfg.Ark.Model}); err != nil {
+			log.Printf("worker: ark disabled: %v", err)
+		} else {
+			arkCli = c
+			log.Printf("worker: ark moderation enabled (model=%s)", cfg.Ark.Model)
+		}
+	}
 
 	// 启动时从 MySQL 全量同步点赞数、热度到 Redis
 	if err := syncLikesAndPopularityFromMySQL(context.Background(), db, cfg, rdb); err != nil {
@@ -104,6 +155,15 @@ func main() {
 			if err := json.Unmarshal(body, &e); err != nil {
 				return err
 			}
+			if e.EventID != "" {
+				ok, err := recordProcessedEvent(ctx, db, e.EventID, "like")
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return nil
+				}
+			}
 			member := formatVideoID(e.VideoID)
 			return rdb.ZIncrBy(ctx, RedisKeyHotLikes, float64(e.Delta), member)
 		})
@@ -119,6 +179,15 @@ func main() {
 			if err := json.Unmarshal(body, &e); err != nil {
 				return err
 			}
+			if e.EventID != "" {
+				ok, err := recordProcessedEvent(ctx, db, e.EventID, "comment")
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return nil
+				}
+			}
 			return nil
 		})
 	}()
@@ -133,7 +202,77 @@ func main() {
 			if err := json.Unmarshal(body, &e); err != nil {
 				return err
 			}
+			if e.EventID != "" {
+				ok, err := recordProcessedEvent(ctx, db, e.EventID, "social")
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return nil
+				}
+			}
 			return nil
+		})
+	}()
+
+	// CommentAudit 消费者：调用大模型审核评论并回写 MySQL
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Printf("worker: consuming %s", events.QueueCommentAudit)
+		_ = mq.Consume(events.QueueCommentAudit, func(body []byte) error {
+			var e events.CommentAuditEvent
+			if err := json.Unmarshal(body, &e); err != nil {
+				return err
+			}
+			if e.CommentID == 0 || e.VideoID == 0 {
+				return nil
+			}
+			if e.EventID != "" {
+				ok, err := recordProcessedEvent(ctx, db, e.EventID, "comment_audit")
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return nil
+				}
+			}
+			if arkCli == nil {
+				changed, err := approveComment(ctx, db, e.CommentID, e.VideoID, "ark", "", "ark disabled (auto-approve)")
+				if err == nil && changed {
+					_ = rdb.Del(ctx, commentListKey(e.VideoID))
+				}
+				return err
+			}
+			res, err := arkCli.AuditComment(ctx, e.Content)
+			if err != nil {
+				changed, e2 := markSuspect(ctx, db, e.CommentID, "ark", "其他", "ark error: "+err.Error())
+				if e2 == nil && changed {
+					_ = rdb.Del(ctx, commentListKey(e.VideoID))
+				}
+				return e2
+			}
+			cats := joinCats(res.Categories)
+			switch res.Decision {
+			case moderation.DecisionAllow:
+				changed, e2 := approveComment(ctx, db, e.CommentID, e.VideoID, "ark", cats, res.Reason)
+				if e2 == nil && changed {
+					_ = rdb.Del(ctx, commentListKey(e.VideoID))
+				}
+				return e2
+			case moderation.DecisionBlock:
+				changed, e2 := blockComment(ctx, db, e.CommentID, "ark", cats, res.Reason)
+				if e2 == nil && changed {
+					_ = rdb.Del(ctx, commentListKey(e.VideoID))
+				}
+				return e2
+			default:
+				changed, e2 := markSuspect(ctx, db, e.CommentID, "ark", cats, res.Reason)
+				if e2 == nil && changed {
+					_ = rdb.Del(ctx, commentListKey(e.VideoID))
+				}
+				return e2
+			}
 		})
 	}()
 
@@ -146,6 +285,15 @@ func main() {
 			var e events.PopularityEvent
 			if err := json.Unmarshal(body, &e); err != nil {
 				return err
+			}
+			if e.EventID != "" {
+				ok, err := recordProcessedEvent(ctx, db, e.EventID, "popularity")
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return nil
+				}
 			}
 			member := formatVideoID(e.VideoID)
 			return rdb.ZIncrBy(ctx, RedisKeyHot, float64(e.Delta), member)
@@ -162,11 +310,11 @@ func main() {
 			if err := json.Unmarshal(body, &e); err != nil {
 				return err
 			}
-			return handlePlayEvent(ctx, db, e)
+			return handlePlayEventIdempotent(ctx, db, e)
 		})
 	}()
 
-	log.Printf("worker started, consuming 5 queues. Press Ctrl+C to stop")
+	log.Printf("worker started, consuming 6 queues. Press Ctrl+C to stop")
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
@@ -175,6 +323,55 @@ func main() {
 	mq.Close() // 关闭连接使 Consume 返回
 	wg.Wait()
 	log.Printf("worker stopped")
+}
+
+func joinCats(cats []string) string {
+	out := make([]byte, 0, 64)
+	for i := range cats {
+		if i > 0 {
+			out = append(out, ',')
+		}
+		out = append(out, []byte(cats[i])...)
+	}
+	return string(out)
+}
+
+func approveComment(ctx context.Context, db *gorm.DB, commentID, videoID uint, auditType, cats, note string) (bool, error) {
+	now := time.Now()
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Exec(`UPDATE comments SET status='approved', audit_type=?, audit_cats=?, audit_note=?, reviewed_at=? WHERE id=? AND status='pending' AND deleted_at IS NULL`, auditType, cats, note, now, commentID)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			// 已处理（非 pending）则幂等忽略，避免重复计数
+			return nil
+		}
+		// 评论权重=4（与 Video/Worker 热度公式一致）
+		return tx.Exec(`UPDATE videos SET comment_count = GREATEST(comment_count + 1, 0), popularity = GREATEST(popularity + 4, 0) WHERE id = ?`, videoID).Error
+	})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func blockComment(ctx context.Context, db *gorm.DB, commentID uint, auditType, cats, note string) (bool, error) {
+	now := time.Now()
+	res := db.WithContext(ctx).Exec(`UPDATE comments SET status='blocked', audit_type=?, audit_cats=?, audit_note=?, reviewed_at=? WHERE id=? AND status='pending' AND deleted_at IS NULL`, auditType, cats, note, now, commentID)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
+func markSuspect(ctx context.Context, db *gorm.DB, commentID uint, auditType, cats, note string) (bool, error) {
+	now := time.Now()
+	res := db.WithContext(ctx).Exec(`UPDATE comments SET status='suspect', audit_type=?, audit_cats=?, audit_note=?, reviewed_at=? WHERE id=? AND status='pending' AND deleted_at IS NULL`, auditType, cats, note, now, commentID)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
 func formatVideoID(id uint) string {
@@ -213,6 +410,57 @@ func handlePlayEvent(ctx context.Context, db *gorm.DB, e events.PlayEvent) error
 		}
 		return tx.Exec(`UPDATE videos SET play_count = GREATEST(play_count + 1, 0), popularity = GREATEST(popularity + ?, 0) WHERE id = ?`, wPlay, e.VideoID).Error
 	})
+}
+
+func handlePlayEventIdempotent(ctx context.Context, db *gorm.DB, e events.PlayEvent) error {
+	// 兼容老消息：没有 event_id 则退化为非幂等处理
+	if e.EventID == "" {
+		return handlePlayEvent(ctx, db, e)
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ok, err := recordProcessedEventTx(ctx, tx, e.EventID, "play")
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
+		now := time.Now()
+		if err := tx.Exec(`
+			INSERT INTO play_records (account_id, video_id, play_count, last_play_at, created_at)
+			VALUES (?, ?, 1, ?, ?)
+			ON DUPLICATE KEY UPDATE play_count = play_count + 1, last_play_at = VALUES(last_play_at)
+		`, e.AccountID, e.VideoID, now, now).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`UPDATE videos SET play_count = GREATEST(play_count + 1, 0), popularity = GREATEST(popularity + ?, 0) WHERE id = ?`, wPlay, e.VideoID).Error
+	})
+}
+
+// recordProcessedEvent 写入幂等表：返回 true 表示首次处理，false 表示重复事件。
+func recordProcessedEvent(ctx context.Context, db *gorm.DB, eventID, eventType string) (bool, error) {
+	if eventID == "" {
+		return true, nil
+	}
+	var ok bool
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		b, err := recordProcessedEventTx(ctx, tx, eventID, eventType)
+		if err != nil {
+			return err
+		}
+		ok = b
+		return nil
+	})
+	return ok, err
+}
+
+func recordProcessedEventTx(ctx context.Context, tx *gorm.DB, eventID, eventType string) (bool, error) {
+	// MySQL: INSERT IGNORE 利用唯一键实现幂等
+	res := tx.WithContext(ctx).Exec(`INSERT IGNORE INTO processed_events (event_id, event_type, created_at) VALUES (?, ?, ?)`, eventID, eventType, time.Now())
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
 // syncLikesAndPopularityFromMySQL 从 MySQL 全量同步到 Redis ZSET，并按加权公式重算 popularity

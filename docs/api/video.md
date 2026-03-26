@@ -1,5 +1,12 @@
 # Video 服务 API 接口文档
 
+## 推荐通过网关访问（统一入口）
+
+- **Gateway Base URL**：`http://127.0.0.1:8080`
+- **本服务路径前缀**：`/video`、`/comment`、`/like`（以及本地静态资源 `/static/*`）
+- **鉴权**：文档中标注“需鉴权”的接口需 `Authorization: Bearer <token>`；标注“公开”的接口无需
+- **限流**：网关启用令牌桶限流，超限返回 **429**
+
 **基础路径**：`/video`、`/comment`、`/like`  
 **端口**：8082（可通过 config 配置）
 

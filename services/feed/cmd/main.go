@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"kairos/pkg/config"
 	"kairos/pkg/middleware"
 	"kairos/pkg/redis"
+	"kairos/pkg/registry"
 	feed "kairos/services/feed/internal"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +19,24 @@ import (
 func main() {
 	config.LoadEnvFromSearchPaths(true)
 	cfg := config.Load()
+
+	// etcd 注册（可选）
+	var reg *registry.EtcdRegistry
+	if len(cfg.Etcd.Endpoints) > 0 {
+		r, err := registry.NewEtcd(registry.Config{Endpoints: cfg.Etcd.Endpoints, Prefix: cfg.Etcd.Prefix, TTL: cfg.Etcd.TTL})
+		if err != nil {
+			log.Printf("feed: etcd disabled: %v", err)
+		} else {
+			reg = r
+			instanceID := fmt.Sprintf("feed-%d", os.Getpid())
+			httpPort := cfg.Server.FeedPort
+			if httpPort == 0 {
+				httpPort = 8084
+			}
+			_, _ = reg.Register(context.Background(), "feed", registry.ServiceHTTP, instanceID, fmt.Sprintf("127.0.0.1:%d", httpPort))
+		}
+	}
+	defer func() { _ = reg.Close() }()
 
 	// Feed 无独立 DB，依赖 Redis（鉴权）和 gRPC
 	rdb := redis.New(redis.Config{

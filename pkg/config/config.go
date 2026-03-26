@@ -18,6 +18,8 @@ type Config struct {
 	Jwt      JwtConfig      `yaml:"jwt"`
 	Database DatabaseConfig `yaml:"database"`
 	Redis    RedisConfig    `yaml:"redis"`
+	Etcd     EtcdConfig     `yaml:"etcd"`
+	Ark      ArkConfig      `yaml:"ark"`
 	Account  AccountConfig  `yaml:"account"`
 	Video    VideoConfig    `yaml:"video"`
 	Social   SocialConfig   `yaml:"social"`
@@ -51,31 +53,31 @@ type FeedConfig struct {
 
 // IMConfig IM 服务配置（依赖 Account、Social gRPC）
 type IMConfig struct {
-	AccountGrpcAddr         string            `yaml:"account_grpc_addr"`          // Account gRPC 地址
-	SocialGrpcAddr          string            `yaml:"social_grpc_addr"`           // Social gRPC 地址（校验互关）
-	Meilisearch             MeilisearchConfig `yaml:"meilisearch"`                // Meilisearch 消息搜索（可选）
-	MeilisearchSyncInterval int               `yaml:"meilisearch_sync_interval"`   // MySQL→Meilisearch 全量同步间隔（分钟），0=仅启动时同步
+	AccountGrpcAddr         string            `yaml:"account_grpc_addr"`         // Account gRPC 地址
+	SocialGrpcAddr          string            `yaml:"social_grpc_addr"`          // Social gRPC 地址（校验互关）
+	Meilisearch             MeilisearchConfig `yaml:"meilisearch"`               // Meilisearch 消息搜索（可选）
+	MeilisearchSyncInterval int               `yaml:"meilisearch_sync_interval"` // MySQL→Meilisearch 全量同步间隔（分钟），0=仅启动时同步
 }
 
 // VideoConfig Video 服务配置（含 RPC 调用 Account 的地址、存储类型等）
 type VideoConfig struct {
-	AccountGrpcAddr string           `yaml:"account_grpc_addr"` // Account gRPC 地址（Video 调用）
-	Storage         StorageConfig    `yaml:"storage"`           // 存储配置（本地 / 七牛云）
+	AccountGrpcAddr string            `yaml:"account_grpc_addr"` // Account gRPC 地址（Video 调用）
+	Storage         StorageConfig     `yaml:"storage"`           // 存储配置（本地 / 七牛云）
 	Meilisearch     MeilisearchConfig `yaml:"meilisearch"`       // Meilisearch 搜索（可选）
 }
 
 // MeilisearchConfig Meilisearch 配置
 type MeilisearchConfig struct {
-	Host    string `yaml:"host"`    // 如 http://127.0.0.1:7700
-	APIKey  string `yaml:"api_key"` // 可选，无鉴权时留空
-	Index   string `yaml:"index"`   // 索引名，默认 videos
+	Host   string `yaml:"host"`    // 如 http://127.0.0.1:7700
+	APIKey string `yaml:"api_key"` // 可选，无鉴权时留空
+	Index  string `yaml:"index"`   // 索引名，默认 videos
 }
 
 // StorageConfig 存储配置，用于动态切换 local / qiniu
 type StorageConfig struct {
-	Type  string              `yaml:"type"`  // local | qiniu
-	Local LocalStorageConfig  `yaml:"local"` // 本地存储配置（type=local 时生效）
-	Qiniu QiniuConfig         `yaml:"qiniu"` // 七牛云配置（type=qiniu 时生效）
+	Type  string             `yaml:"type"`  // local | qiniu
+	Local LocalStorageConfig `yaml:"local"` // 本地存储配置（type=local 时生效）
+	Qiniu QiniuConfig        `yaml:"qiniu"` // 七牛云配置（type=qiniu 时生效）
 }
 
 // LocalStorageConfig 本地存储配置
@@ -95,15 +97,16 @@ type QiniuConfig struct {
 
 // AccountConfig Account 服务地址（Video 等下游服务调用）
 type AccountConfig struct {
-	BaseURL  string `yaml:"base_url"`   // HTTP 地址（保留兼容）
-	GrpcAddr string `yaml:"grpc_addr"`  // gRPC 地址（服务间 RPC）
+	BaseURL  string `yaml:"base_url"`  // HTTP 地址（保留兼容）
+	GrpcAddr string `yaml:"grpc_addr"` // gRPC 地址（服务间 RPC）
 }
 
 // JwtConfig JWT 配置
 type JwtConfig struct {
-	SecretKey string `yaml:"secret_key"`
-	TokenTimeout int `yaml:"token_timeout"`
+	SecretKey    string `yaml:"secret_key"`
+	TokenTimeout int    `yaml:"token_timeout"`
 }
+
 // ServerConfig HTTP 服务配置
 type ServerConfig struct {
 	AccountPort     int    `yaml:"account_port"`      // Account HTTP 端口
@@ -114,6 +117,7 @@ type ServerConfig struct {
 	SocialGrpcPort  int    `yaml:"social_grpc_port"`  // Social gRPC 端口（Feed 调用）
 	FeedPort        int    `yaml:"feed_port"`         // Feed HTTP 端口
 	IMPort          int    `yaml:"im_port"`           // IM HTTP/WebSocket 端口
+	GatewayPort     int    `yaml:"gateway_port"`      // Gateway HTTP 端口
 	GinMode         string `yaml:"gin_mode"`          // debug | release | test
 }
 
@@ -132,6 +136,20 @@ type RedisConfig struct {
 	Port     int    `yaml:"port"`
 	Password string `yaml:"password"`
 	DB       int    `yaml:"db"`
+}
+
+// EtcdConfig etcd 注册发现配置（可选，留空则禁用）
+type EtcdConfig struct {
+	Endpoints []string `yaml:"endpoints"` // 如 ["127.0.0.1:2379"]
+	Prefix    string   `yaml:"prefix"`    // 如 "/kairos/services"
+	TTL       int      `yaml:"ttl"`       // 秒，lease TTL（建议 5~30）
+}
+
+// ArkConfig 字节方舟（Ark）大模型配置（OpenAI SDK 兼容接口）
+type ArkConfig struct {
+	APIKey  string `yaml:"api_key"`  // ARK_API_KEY
+	BaseURL string `yaml:"base_url"` // 如 https://ark.cn-beijing.volces.com/api/v3
+	Model   string `yaml:"model"`    // 如 doubao-seed-1-6-lite-251015
 }
 
 // LoadEnvFile 将 config.env 中的 key=value 加载到环境变量
@@ -254,11 +272,12 @@ func LoadFromEnv() Config {
 			SocialGrpcPort:  getEnvInt("SOCIAL_GRPC_PORT", 9083),
 			FeedPort:        getEnvInt("FEED_SERVER_PORT", 8084),
 			IMPort:          getEnvInt("IM_SERVER_PORT", 8085),
+			GatewayPort:     getEnvInt("GATEWAY_SERVER_PORT", 8080),
 			GinMode:         getEnv("GIN_MODE", "debug"),
 		},
 		Jwt: JwtConfig{
-			SecretKey: getEnv("JWT_SECRET", "change-me-in-env"),
-			TokenTimeout: getEnvInt("JWT_TOKEN_TIMEOUT", 24 * 60),
+			SecretKey:    getEnv("JWT_SECRET", "change-me-in-env"),
+			TokenTimeout: getEnvInt("JWT_TOKEN_TIMEOUT", 24*60),
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "127.0.0.1"),
@@ -272,6 +291,16 @@ func LoadFromEnv() Config {
 			Port:     getEnvInt("REDIS_PORT", 6379),
 			Password: getEnv("REDIS_PASSWORD", ""),
 			DB:       getEnvInt("REDIS_DB", 0),
+		},
+		Etcd: EtcdConfig{
+			Endpoints: splitComma(getEnv("ETCD_ENDPOINTS", "")),
+			Prefix:    getEnv("ETCD_PREFIX", "/kairos/services"),
+			TTL:       getEnvInt("ETCD_TTL", 10),
+		},
+		Ark: ArkConfig{
+			APIKey:  getEnv("ARK_API_KEY", ""),
+			BaseURL: getEnv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+			Model:   getEnv("ARK_MODEL", "doubao-seed-1-6-lite-251015"),
 		},
 		Account: AccountConfig{
 			BaseURL:  getEnv("ACCOUNT_SERVICE_URL", "http://127.0.0.1:8081"),
@@ -347,4 +376,20 @@ func getEnvInt(key string, defaultVal int) int {
 		}
 	}
 	return defaultVal
+}
+
+func splitComma(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -95,4 +96,12 @@ func (c *Client) SIsMember(ctx context.Context, key string, member interface{}) 
 		return false, nil
 	}
 	return c.rdb.SIsMember(ctx, key, member).Result()
+}
+
+// EvalInt 执行 Lua 脚本并返回 int64（常用于限流等原子操作）
+func (c *Client) EvalInt(ctx context.Context, script string, keys []string, args ...interface{}) (int64, error) {
+	if c == nil || c.rdb == nil {
+		return 0, fmt.Errorf("redis client is nil")
+	}
+	return c.rdb.Eval(ctx, script, keys, args...).Int64()
 }

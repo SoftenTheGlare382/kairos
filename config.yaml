@@ -16,6 +16,17 @@ redis:
   password: ${REDIS_PASSWORD:-}
   db: ${REDIS_DB:-0}
 
+etcd:
+  # 留空则禁用 etcd 注册发现；多节点用逗号分隔（建议配到 config.env/环境变量）
+  endpoints: [${ETCD_ENDPOINTS:-127.0.0.1:2379}]
+  prefix: ${ETCD_PREFIX:-/kairos/services}
+  ttl: ${ETCD_TTL:-10}  # 秒，lease TTL
+
+ark:
+  api_key: ${ARK_API_KEY:-}
+  base_url: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+  model: ${ARK_MODEL:-doubao-seed-1-6-lite-251015}
+
 rabbitmq:
   url: ${RABBITMQ_URL:-amqp://guest:guest@127.0.0.1:5672/}
 
@@ -37,6 +48,7 @@ server:
   social_grpc_port: ${SOCIAL_GRPC_PORT:-9083}     # Social gRPC 端口（Feed 调用）
   feed_port: ${FEED_SERVER_PORT:-8084}            # Feed HTTP 端口
   im_port: ${IM_SERVER_PORT:-8085}                # IM HTTP/WebSocket 端口
+  gateway_port: ${GATEWAY_SERVER_PORT:-8080}      # Gateway HTTP 端口
   gin_mode: ${GIN_MODE:-debug}             # debug | release | test
 # Video 等下游服务调用 Account 的地址
 account:

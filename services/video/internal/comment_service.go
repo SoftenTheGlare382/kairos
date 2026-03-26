@@ -22,6 +22,7 @@ func commentListKey(videoID uint) string { return fmt.Sprintf("comment:list:%d",
 type CommentPublisher interface {
 	PublishComment(videoID uint, delta int64)
 	PublishPopularity(videoID uint, delta int64)
+	PublishCommentAudit(commentID, videoID, authorID uint, content string)
 }
 
 // CommentService 评论服务
@@ -57,21 +58,17 @@ func (s *CommentService) Publish(ctx context.Context, c *Comment) error {
 	if !ok {
 		return errors.New("video not found")
 	}
+	// 新评论默认 pending，审核通过再展示/计数
+	c.Status = "pending"
 	if err := s.commentRepo.Create(ctx, c); err != nil {
 		return err
 	}
 	if s.rdb != nil {
 		s.rdb.Del(ctx, commentListKey(c.VideoID))
 	}
-	if err := s.videoRepo.UpdateCommentCount(ctx, c.VideoID, 1); err != nil {
-		return err
-	}
-	if err := s.videoRepo.UpdatePopularity(ctx, c.VideoID, PopularityWeightComment); err != nil {
-		return err
-	}
+	// 异步审核：Worker 调用大模型审核并回写 status
 	if s.publisher != nil {
-		s.publisher.PublishComment(c.VideoID, 1)
-		s.publisher.PublishPopularity(c.VideoID, PopularityWeightComment)
+		s.publisher.PublishCommentAudit(c.ID, c.VideoID, c.AuthorID, c.Content)
 	}
 	return nil
 }

@@ -57,6 +57,11 @@ type Comment struct {
 	VideoID   uint           `gorm:"index" json:"video_id"`
 	AuthorID  uint           `gorm:"index" json:"author_id"`
 	Content   string         `gorm:"type:text" json:"content"`
+	Status    string         `gorm:"size:32;not null;default:approved;index" json:"status"` // approved|pending|blocked|suspect
+	AuditType string         `gorm:"size:32" json:"audit_type,omitempty"`                  // ark
+	AuditCats string         `gorm:"size:255" json:"audit_categories,omitempty"`           // csv
+	AuditNote string         `gorm:"size:512" json:"audit_reason,omitempty"`
+	ReviewedAt *time.Time    `json:"reviewed_at,omitempty"`
 	CreatedAt time.Time      `gorm:"autoCreateTime" json:"created_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }

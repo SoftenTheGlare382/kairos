@@ -57,7 +57,7 @@ func (h *CommentHandler) PublishComment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "comment published successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "comment accepted, pending moderation"})
 }
 
 // DeleteComment 删除评论

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 
 	"kairos/api/socialpb"
 	"kairos/pkg/config"
@@ -14,6 +15,7 @@ import (
 	"kairos/pkg/middleware"
 	"kairos/pkg/rabbitmq"
 	"kairos/pkg/redis"
+	"kairos/pkg/registry"
 	social "kairos/services/social/internal"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +28,29 @@ import (
 func main() {
 	config.LoadEnvFromSearchPaths(true)
 	cfg := config.Load()
+
+	// etcd 注册（可选）
+	var reg *registry.EtcdRegistry
+	if len(cfg.Etcd.Endpoints) > 0 {
+		r, err := registry.NewEtcd(registry.Config{Endpoints: cfg.Etcd.Endpoints, Prefix: cfg.Etcd.Prefix, TTL: cfg.Etcd.TTL})
+		if err != nil {
+			log.Printf("social: etcd disabled: %v", err)
+		} else {
+			reg = r
+			instanceID := fmt.Sprintf("social-%d", os.Getpid())
+			httpPort := cfg.Server.SocialPort
+			if httpPort == 0 {
+				httpPort = 8083
+			}
+			_, _ = reg.Register(context.Background(), "social", registry.ServiceHTTP, instanceID, fmt.Sprintf("127.0.0.1:%d", httpPort))
+			grpcPort := cfg.Server.SocialGrpcPort
+			if grpcPort == 0 {
+				grpcPort = 9083
+			}
+			_, _ = reg.Register(context.Background(), "social", registry.ServiceGRPC, instanceID, fmt.Sprintf("127.0.0.1:%d", grpcPort))
+		}
+	}
+	defer func() { _ = reg.Close() }()
 
 	db, err := openDB(cfg.Database)
 	if err != nil {

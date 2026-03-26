@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"kairos/pkg/middleware"
 	"kairos/pkg/rabbitmq"
 	"kairos/pkg/redis"
+	"kairos/pkg/registry"
 	video "kairos/services/video/internal"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +31,29 @@ import (
 func main() {
 	config.LoadEnvFromSearchPaths(true)
 	cfg := config.Load()
+
+	// etcd 注册（可选）
+	var reg *registry.EtcdRegistry
+	if len(cfg.Etcd.Endpoints) > 0 {
+		r, err := registry.NewEtcd(registry.Config{Endpoints: cfg.Etcd.Endpoints, Prefix: cfg.Etcd.Prefix, TTL: cfg.Etcd.TTL})
+		if err != nil {
+			log.Printf("video: etcd disabled: %v", err)
+		} else {
+			reg = r
+			instanceID := fmt.Sprintf("video-%d", os.Getpid())
+			httpPort := cfg.Server.VideoPort
+			if httpPort == 0 {
+				httpPort = 8082
+			}
+			_, _ = reg.Register(context.Background(), "video", registry.ServiceHTTP, instanceID, fmt.Sprintf("127.0.0.1:%d", httpPort))
+			grpcPort := cfg.Server.VideoGrpcPort
+			if grpcPort == 0 {
+				grpcPort = 9082
+			}
+			_, _ = reg.Register(context.Background(), "video", registry.ServiceGRPC, instanceID, fmt.Sprintf("127.0.0.1:%d", grpcPort))
+		}
+	}
+	defer func() { _ = reg.Close() }()
 
 	// 与 Account 服务共用 kairos_db，不同表
 	db, err := openDB(cfg.Database)

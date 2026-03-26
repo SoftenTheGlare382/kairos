@@ -42,7 +42,7 @@ func (r *CommentRepository) Delete(ctx context.Context, c *Comment) error {
 // ListByVideoID 按视频列出评论
 func (r *CommentRepository) ListByVideoID(ctx context.Context, videoID uint) ([]Comment, error) {
 	var list []Comment
-	err := r.db.WithContext(ctx).Where("video_id = ?", videoID).
+	err := r.db.WithContext(ctx).Where("video_id = ? AND status = ?", videoID, "approved").
 		Order("created_at asc").Find(&list).Error
 	return list, err
 }

@@ -6,11 +6,13 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"kairos/pkg/bloomfilter"
 	"kairos/pkg/config"
 	"kairos/pkg/redis"
+	"kairos/pkg/registry"
 	account "kairos/services/account/internal"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +28,25 @@ func main() {
 	// 配置加载：见 docs/config.md
 	config.LoadEnvFromSearchPaths(true)
 	cfg := config.Load()
+
+	// etcd 注册（可选）
+	var reg *registry.EtcdRegistry
+	if len(cfg.Etcd.Endpoints) > 0 {
+		r, err := registry.NewEtcd(registry.Config{Endpoints: cfg.Etcd.Endpoints, Prefix: cfg.Etcd.Prefix, TTL: cfg.Etcd.TTL})
+		if err != nil {
+			log.Printf("account: etcd disabled: %v", err)
+		} else {
+			reg = r
+			instanceID := fmt.Sprintf("account-%d", os.Getpid())
+			_, _ = reg.Register(context.Background(), "account", registry.ServiceHTTP, instanceID, fmt.Sprintf("127.0.0.1:%d", cfg.Server.AccountPort))
+			grpcPort := cfg.Server.AccountGrpcPort
+			if grpcPort == 0 {
+				grpcPort = 9081
+			}
+			_, _ = reg.Register(context.Background(), "account", registry.ServiceGRPC, instanceID, fmt.Sprintf("127.0.0.1:%d", grpcPort))
+		}
+	}
+	defer func() { _ = reg.Close() }()
 
 	db, err := openDB(cfg.Database)
 	if err != nil {
